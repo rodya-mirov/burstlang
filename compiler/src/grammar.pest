@@ -1,0 +1,35 @@
+Expr = { Factor ~ (AddExpr)* }
+AddExpr = { (PLUS | MINUS) ~ Factor }
+Factor = { Primary ~ (MulExpr)* }
+MulExpr = { (TIMES | DIVIDE) ~ Primary }
+
+Primary = {
+    ParenExpr |
+    Number |
+    Variable |
+    UnaryExpr
+}
+
+ParenExpr = {
+    "(" ~ Expr ~ ")"
+}
+
+UnaryExpr = { NEG ~ Primary }
+
+PLUS = { "+" }
+MINUS = { "-" }
+
+TIMES = { "*" }
+DIVIDE = { "/" }
+
+NEG = { "-" }
+
+Number = @{ ("-")? ~ (ASCII_DIGIT)+ }
+
+Variable = { ASCII_LETTER ~ (ASCII_LETTER | ASCII_DIGIT | "_")* }
+
+ASCII_LETTER = { ('A'..'Z') | ('a'..'z') }
+
+WholeExpr = { SOI ~ Expr ~ EOI }
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }

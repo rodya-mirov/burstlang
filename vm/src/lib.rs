@@ -5,6 +5,7 @@ use bytecode::{Chunk, OpCode, Value};
 pub struct VM<'a> {
     chunk: &'a Chunk,
     stack: Vec<Value>,
+    globals: Vec<Option<Value>>,
     // instruction pointer; name is classical
     ip: usize,
 }
@@ -14,12 +15,24 @@ impl<'a> VM<'a> {
         VM {
             chunk,
             stack: Vec::new(),
+            globals: (0..chunk.num_globals()).map(|_| None).collect(),
             ip: 0,
         }
     }
 
     pub fn get_stack(&self) -> &[Value] {
         &self.stack
+    }
+
+    pub fn make_global_map(&self) -> Vec<(&str, Option<Value>)> {
+        let mut out = Vec::with_capacity(self.globals.len());
+        for i in 0..self.globals.len() {
+            out.push((
+                self.chunk.get_global_name(i).unwrap(),
+                self.globals[i].clone(),
+            ));
+        }
+        out
     }
 
     pub fn run(&mut self) {
@@ -32,6 +45,32 @@ impl<'a> VM<'a> {
             match op_code {
                 OpCode::OpReturn => {
                     break;
+                }
+                OpCode::OpPrint => {
+                    let stack_val = self.stack.pop().unwrap();
+                    println!("{:?}", stack_val.0);
+                }
+                OpCode::OpPop => {
+                    let _ = self.stack.pop().unwrap();
+                }
+                OpCode::OpDefine => {
+                    let val = self.stack.pop().unwrap();
+                    let global_index = code[self.ip + 1] as usize;
+                    self.globals[global_index] = Some(val);
+                }
+                OpCode::OpVariableAccess => {
+                    let global_index = code[self.ip + 1] as usize;
+                    let global_value = self.globals[global_index];
+
+                    if global_value.is_none() {
+                        panic!(
+                            "Variable {} (index {}) accessed before use.",
+                            self.chunk.get_global_name(global_index).unwrap(),
+                            global_index
+                        );
+                    }
+
+                    self.stack.push(global_value.unwrap());
                 }
                 OpCode::OpConstant => {
                     let value_index = code[self.ip + 1] as usize;

@@ -1,3 +1,20 @@
+Program = { SOI ~ (Stmt)* ~ EOI }
+
+Stmt = {
+    ExprStmt |
+    PrintStmt |
+    ReturnStmt |
+    VarDefnStmt |
+    Block
+}
+
+ExprStmt = { Expr ~ SEMI }
+PrintStmt = { "print" ~ Expr ~ SEMI }
+VarDefnStmt = { "let" ~ ID ~ "=" ~ Expr ~ SEMI }
+ReturnStmt = { "return" ~ Expr ~ SEMI }
+Block = { "{" ~ (Stmt)* ~ "}" }
+
+
 Expr = { Factor ~ (AddExpr)* }
 AddExpr = { (PLUS | MINUS) ~ Factor }
 Factor = { Primary ~ (MulExpr)* }
@@ -6,9 +23,11 @@ MulExpr = { (TIMES | DIVIDE) ~ Primary }
 Primary = {
     ParenExpr |
     Number |
-    Variable |
+    VariableAccess |
     UnaryExpr
 }
+
+VariableAccess = { ID }
 
 ParenExpr = {
     "(" ~ Expr ~ ")"
@@ -23,13 +42,12 @@ TIMES = { "*" }
 DIVIDE = { "/" }
 
 NEG = { "-" }
+SEMI = { ";" }
 
 Number = @{ ("-")? ~ (ASCII_DIGIT)+ }
 
-Variable = { ASCII_LETTER ~ (ASCII_LETTER | ASCII_DIGIT | "_")* }
+ID = @{ ASCII_LETTER ~ (ASCII_LETTER | ASCII_DIGIT | "_")* }
 
-ASCII_LETTER = { ('A'..'Z') | ('a'..'z') }
-
-WholeExpr = { SOI ~ Expr ~ EOI }
+ASCII_LETTER = _{ ('A'..'Z') | ('a'..'z') }
 
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }

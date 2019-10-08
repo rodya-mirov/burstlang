@@ -12,7 +12,7 @@ fn main() {
     for line in stdin.lock().lines() {
         match line {
             Ok(line) => {
-                let parsed = LoxParser::parse(Rule::WholeExpr, &line);
+                let parsed = LoxParser::parse(Rule::Program, &line);
                 match parsed {
                     Ok(mut parse) => {
                         let only_pair = parse.next().unwrap();
@@ -24,7 +24,8 @@ fn main() {
 
                         vm.run();
 
-                        println!("Result: {:?}", vm.get_stack());
+                        println!("Resulting stack: {:?}", vm.get_stack());
+                        println!("Resulting globals: {:?}", vm.make_global_map());
                     }
                     Err(e) => {
                         println!("Not a valid parse sorry: {:?}", e);

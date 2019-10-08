@@ -19,23 +19,26 @@ pub struct ParseError {
 }
 
 pub fn parse_program(input: &str) -> Result<Pair<Rule>, ParseError> {
-    match LoxParser::parse(Rule::WholeExpr, input) {
-        Ok(mut parsed) => Ok(parsed.next().unwrap()), // WholeExpr is always a single node
+    match LoxParser::parse(Rule::Program, input) {
+        // Program -> a single Pair, which is the Program
+        Ok(mut parsed) => Ok(parsed.next().unwrap()),
         Err(e) => Err(ParseError {
             message: format!("{:?}", e),
         }),
     }
 }
 
-pub fn compile_program(parsed: Pair<Rule>) -> Chunk {
-    // NOTE: parsed is assumed to be a ParseResult of WholeExpr, which is a wrapper around
-    // Expr; this should be adjusted as "program" changes
-
+pub fn compile_program(program: Pair<Rule>) -> Chunk {
     let mut chunk = Chunk::init();
 
-    let expr = parsed.into_inner().next().unwrap();
+    for stmt in program.into_inner() {
+        match stmt.as_rule() {
+            Rule::Stmt => compile_stmt(stmt, &mut chunk),
+            Rule::EOI => {}
+            _ => unreachable!(),
+        }
+    }
 
-    compile_expr(expr, &mut chunk);
     chunk
 }
 
@@ -44,6 +47,49 @@ fn compile_error(expr: &Pair<Rule>) -> ! {
         "Unexpected state, see stacktrace. Parsed object: {:?}",
         expr
     )
+}
+
+fn compile_stmt(stmt: Pair<Rule>, chunk: &mut Chunk) {
+    let mut stmt_pairs = stmt.into_inner();
+
+    let only_child = stmt_pairs.next().unwrap();
+
+    let rule = only_child.as_rule();
+    let mut pairs = only_child.into_inner();
+
+    match rule {
+        Rule::ExprStmt => {
+            let expr = pairs.next().unwrap();
+            compile_expr(expr, chunk);
+            chunk.push_code(OpCode::OpPop, 0);
+        }
+        Rule::ReturnStmt => unimplemented!(),
+        Rule::Block => unimplemented!(),
+        Rule::PrintStmt => {
+            let expr = pairs.next().unwrap();
+            compile_expr(expr, chunk);
+            chunk.push_code(OpCode::OpPrint, 0);
+        }
+        Rule::VarDefnStmt => {
+            let var_name = pairs.next().unwrap().as_str();
+            let expr = pairs.next().unwrap();
+
+            let var_index = chunk.register_global(var_name);
+
+            if var_index >= 256 {
+                panic!("Cannot handle 256 variables!");
+            }
+
+            compile_expr(expr, chunk);
+
+            chunk.push_code(OpCode::OpDefine, 0);
+            chunk.push_code(var_index as u8, 0);
+        }
+        other => panic!(
+            "Unexpected rule {:?} when compiling statement; this is a code bug",
+            other
+        ),
+    }
 }
 
 fn compile_expr(expr: Pair<Rule>, chunk: &mut Chunk) {
@@ -106,10 +152,22 @@ fn compile_primary(primary: Pair<Rule>, chunk: &mut Chunk) {
     match rule {
         Rule::ParenExpr => compile_paren_expr(child_pair, chunk),
         Rule::Number => compile_number(child_pair, chunk),
-        Rule::Variable => unimplemented!("Variables not yet supported???"),
+        Rule::VariableAccess => compile_variable_access(child_pair, chunk),
         Rule::UnaryExpr => compile_unary_expr(child_pair, chunk),
         _ => compile_error(&child_pair),
     }
+}
+
+fn compile_variable_access(var: Pair<Rule>, chunk: &mut Chunk) {
+    let var_name = var.as_str();
+    let var_index = chunk.register_global(var_name);
+
+    if var_index >= 256 {
+        panic!("Cannot handle >= 256 variables :|");
+    }
+
+    chunk.push_code(OpCode::OpVariableAccess, 0);
+    chunk.push_code(var_index as u8, 0);
 }
 
 fn compile_paren_expr(paren_expr: Pair<Rule>, chunk: &mut Chunk) {
@@ -152,109 +210,6 @@ fn compile_unary_expr(unary_expr: Pair<Rule>, chunk: &mut Chunk) {
 
     compile_primary(primary, chunk);
     compile_op(op, chunk);
-}
-
-pub fn eval_str(to_parse: &str, print_tree: bool) {
-    let parsed = LoxParser::parse(Rule::WholeExpr, &to_parse).expect("Parse should succeed");
-
-    if print_tree {
-        tree_print(parsed.clone().next().unwrap(), 0);
-    }
-
-    let mut stack = Vec::new();
-
-    for pair in parsed {
-        eval(pair, &mut stack);
-    }
-
-    println!("When processing '{}', got stack {:?}", to_parse, stack);
-}
-
-pub fn eval(parsed: Pair<Rule>, stack: &mut Vec<i64>) {
-    match parsed.as_rule() {
-        Rule::WholeExpr => eval(
-            parsed
-                .into_inner()
-                .next()
-                .expect("Should be exactly one thing"),
-            stack,
-        ),
-        Rule::Expr | Rule::Factor => {
-            for pair in parsed.into_inner() {
-                eval(pair, stack);
-            }
-        }
-        Rule::Primary => eval_primary(parsed.into_inner(), stack),
-        Rule::AddExpr | Rule::MulExpr => eval_bin_expr(parsed.into_inner(), stack),
-        Rule::Number => {
-            stack.push(
-                parsed
-                    .as_str()
-                    .parse::<i64>()
-                    .expect("Should parse as integer"),
-            );
-        }
-        Rule::Variable => {
-            panic!(
-                "Variables not yet supported, but the text was {}",
-                parsed.as_str()
-            );
-        }
-        other => unimplemented!(
-            "Unimplemented rule: {:?} (string: {})",
-            other,
-            parsed.as_str()
-        ),
-    }
-}
-
-fn eval_primary(primary: Pairs<Rule>, stack: &mut Vec<i64>) {
-    let mut children = primary.into_iter().collect::<Vec<_>>();
-
-    if children.len() == 1 {
-        eval(children.pop().unwrap(), stack);
-    } else if children.len() == 2 {
-        // unary op; eval the second, then match on the first and deal
-        eval(children.pop().unwrap(), stack);
-
-        let op = children.pop().unwrap();
-        match op.as_rule() {
-            Rule::NEG => {
-                let old = stack.pop().unwrap();
-                let new = -old;
-                stack.push(new);
-            }
-            _ => compile_error(&op),
-        }
-    } else {
-        unreachable!()
-    }
-}
-
-fn eval_bin_expr(add_expr: Pairs<Rule>, stack: &mut Vec<i64>) {
-    let mut children = add_expr.into_iter().collect::<Vec<_>>();
-
-    if children.len() != 2 {
-        unreachable!();
-    }
-
-    let a_val = stack.pop().unwrap();
-
-    eval(children.pop().unwrap(), stack);
-
-    let b_val = stack.pop().unwrap();
-
-    let op = children.pop().unwrap();
-
-    let new_val = match op.as_rule() {
-        Rule::PLUS => a_val + b_val,
-        Rule::MINUS => a_val - b_val,
-        Rule::TIMES => a_val * b_val,
-        Rule::DIVIDE => a_val / b_val,
-        _ => compile_error(&op),
-    };
-
-    stack.push(new_val);
 }
 
 fn indent(amt: usize) -> String {

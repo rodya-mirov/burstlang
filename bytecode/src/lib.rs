@@ -15,6 +15,15 @@ pub enum OpCode {
     OpSubtract = 6,
     OpMultiply = 7,
     OpDivide = 8,
+
+    // Other
+    OpPrint = 9,
+    OpPop = 10,
+
+    // Define the value of a variable; takes one operand, which
+    // is the index of the variable in the scope
+    OpDefine = 11,
+    OpVariableAccess = 12,
 }
 
 impl std::convert::TryFrom<u8> for OpCode {
@@ -29,6 +38,10 @@ impl std::convert::TryFrom<u8> for OpCode {
             6 => Ok(OpCode::OpSubtract),
             7 => Ok(OpCode::OpMultiply),
             8 => Ok(OpCode::OpDivide),
+            9 => Ok(OpCode::OpPrint),
+            10 => Ok(OpCode::OpPop),
+            11 => Ok(OpCode::OpDefine),
+            12 => Ok(OpCode::OpVariableAccess),
             _ => Err(val),
         }
     }
@@ -58,6 +71,13 @@ impl OpCode {
             OpCode::OpSubtract => 1,
             OpCode::OpMultiply => 1,
             OpCode::OpDivide => 1,
+
+            // Other
+            OpCode::OpPrint => 1,
+            OpCode::OpPop => 1,
+
+            OpCode::OpDefine => 2,         // operand: variable index
+            OpCode::OpVariableAccess => 2, // operand: variable index
         }
     }
 }
@@ -70,6 +90,8 @@ pub struct Chunk {
     code: Vec<u8>,
     // Some bytes in code are casted to indices in values; this is the constant pool
     values: Vec<Value>,
+    // Reserved variable names; currently everything is global scoped?
+    global_names: Vec<String>,
     // TODO: do a run-length encoding; currently this is in 1-1 correspondence with code
     lines: Vec<usize>,
 }
@@ -79,8 +101,31 @@ impl Chunk {
         Chunk {
             code: Vec::new(),
             values: Vec::new(),
+            global_names: Vec::new(),
             lines: Vec::new(),
         }
+    }
+
+    pub fn register_global(&mut self, var_name: &str) -> usize {
+        for (i, existing) in self.global_names.iter().enumerate() {
+            if existing == var_name {
+                return i;
+            }
+        }
+        self.global_names.push(var_name.to_string());
+        self.global_names.len() - 1
+    }
+
+    pub fn get_global_name(&self, var_index: usize) -> Option<&str> {
+        if var_index < self.global_names.len() {
+            Some(&self.global_names[var_index])
+        } else {
+            None
+        }
+    }
+
+    pub fn num_globals(&self) -> usize {
+        self.global_names.len()
     }
 
     pub fn push_value(&mut self, val: Value) -> usize {
@@ -147,6 +192,18 @@ pub mod disassemble {
             Ok(OpCode::OpSubtract) => (format!("{:04} {:04} OP_SUBTRACT", line, offset)),
             Ok(OpCode::OpMultiply) => (format!("{:04} {:04} OP_MULTIPLY", line, offset)),
             Ok(OpCode::OpDivide) => (format!("{:04} {:04} OP_DIVIDE", line, offset)),
+            Ok(OpCode::OpPrint) => (format!("{:04} {:04} OP_PRINT", line, offset)),
+            Ok(OpCode::OpPop) => (format!("{:04} {:04} OP_POP", line, offset)),
+            Ok(OpCode::OpDefine) => {
+                let var_index = chunk.code[offset + 1] as usize;
+                let var_name = &chunk.global_names[var_index + 1];
+                (format!("{:04} {:04} OP_DEFINE {}", line, offset, var_name))
+            }
+            Ok(OpCode::OpVariableAccess) => {
+                let var_index = chunk.code[offset + 1] as usize;
+                let var_name = &chunk.global_names[var_index + 1];
+                (format!("{:04} {:04} OP_VARIABLE_ACCESS {}", line, offset, var_name))
+            }
             Ok(OpCode::OpConstant) => {
                 let value_index = chunk.code[offset + 1];
                 let value = chunk.get_value(value_index as usize);

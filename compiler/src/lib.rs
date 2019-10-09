@@ -38,7 +38,7 @@ impl Compiler {
 
     fn add_local(&mut self, local_name: &str) -> Result<usize, usize> {
         for (i, existing) in self.locals.iter().enumerate() {
-            if &existing.name == local_name {
+            if existing.name == local_name {
                 return Err(i);
             }
         }
@@ -47,12 +47,12 @@ impl Compiler {
             name: local_name.to_owned(),
             depth: self.scope_depth,
         });
-        return Ok(self.locals.len() - 1);
+        Ok(self.locals.len() - 1)
     }
 
     fn get_local_index(&self, local_name: &str) -> Option<usize> {
         for (i, existing) in self.locals.iter().enumerate() {
-            if &existing.name == local_name {
+            if existing.name == local_name {
                 return Some(i);
             }
         }
@@ -66,8 +66,8 @@ impl Compiler {
 
     fn exit_scope(&mut self) -> usize {
         let mut removed_variables = 0;
-        while self.locals.len() > 0 {
-            let peek = self.locals.get(self.locals.len() - 1).unwrap();
+        while !self.locals.is_empty() {
+            let peek = self.locals.last().unwrap();
             if peek.depth < self.scope_depth {
                 break;
             }
@@ -131,7 +131,7 @@ fn compile_stmt(stmt: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
                 compile_stmt(pair, chunk, compiler);
             }
             let removed_variables = compiler.exit_scope();
-            for _ in 0 .. removed_variables {
+            for _ in 0..removed_variables {
                 chunk.push_code(OpCode::OpPop, 0);
             }
         }
@@ -267,9 +267,9 @@ fn compile_number(number: Pair<Rule>, chunk: &mut Chunk) {
         chunk.push_code(value_index as u8, 0);
     } else if value_index < (1 << 24) {
         let c_ind = value_index as u8; // shaves off most-significant bits
-        value_index = value_index >> 8;
+        value_index >>= 8;
         let b_ind = value_index as u8;
-        value_index = value_index >> 8;
+        value_index >>= 8;
         let a_ind = value_index as u8;
 
         chunk.push_code(OpCode::OpConstantLong, 0);

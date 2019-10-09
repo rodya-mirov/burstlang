@@ -25,7 +25,6 @@ fn main() {
                         vm.run();
 
                         println!("Resulting stack: {:?}", vm.get_stack());
-                        println!("Resulting globals: {:?}", vm.make_global_map());
                     }
                     Err(e) => {
                         println!("Not a valid parse sorry: {:?}", e);

@@ -20,10 +20,12 @@ pub enum OpCode {
     OpPrint = 9,
     OpPop = 10,
 
-    // Define the value of a variable; takes one operand, which
-    // is the index of the variable in the scope
-    OpDefine = 11,
-    OpVariableAccess = 12,
+    // Locals, though
+    // Each take 1 operand, which is the index in the stack where
+    // the variable lives. Note that if we have >255 variables in
+    // scope at once, this representation blows up.
+    OpGetLocal = 11, // access the value at this byte
+    OpSetLocal = 12, // set the value at this byte; note this is for DEFINITION not reassignment
 }
 
 impl std::convert::TryFrom<u8> for OpCode {
@@ -40,8 +42,8 @@ impl std::convert::TryFrom<u8> for OpCode {
             8 => Ok(OpCode::OpDivide),
             9 => Ok(OpCode::OpPrint),
             10 => Ok(OpCode::OpPop),
-            11 => Ok(OpCode::OpDefine),
-            12 => Ok(OpCode::OpVariableAccess),
+            11 => Ok(OpCode::OpGetLocal),
+            12 => Ok(OpCode::OpSetLocal),
             _ => Err(val),
         }
     }
@@ -76,8 +78,9 @@ impl OpCode {
             OpCode::OpPrint => 1,
             OpCode::OpPop => 1,
 
-            OpCode::OpDefine => 2,         // operand: variable index
-            OpCode::OpVariableAccess => 2, // operand: variable index
+            // Locals stuff; operand is place on the stack to put the value
+            OpCode::OpGetLocal => 2,
+            OpCode::OpSetLocal => 2,
         }
     }
 }
@@ -106,6 +109,7 @@ impl Chunk {
         }
     }
 
+    #[deprecated]
     pub fn register_global(&mut self, var_name: &str) -> usize {
         for (i, existing) in self.global_names.iter().enumerate() {
             if existing == var_name {
@@ -116,6 +120,7 @@ impl Chunk {
         self.global_names.len() - 1
     }
 
+    #[deprecated]
     pub fn get_global_name(&self, var_index: usize) -> Option<&str> {
         if var_index < self.global_names.len() {
             Some(&self.global_names[var_index])
@@ -124,6 +129,7 @@ impl Chunk {
         }
     }
 
+    #[deprecated]
     pub fn num_globals(&self) -> usize {
         self.global_names.len()
     }
@@ -194,15 +200,21 @@ pub mod disassemble {
             Ok(OpCode::OpDivide) => (format!("{:04} {:04} OP_DIVIDE", line, offset)),
             Ok(OpCode::OpPrint) => (format!("{:04} {:04} OP_PRINT", line, offset)),
             Ok(OpCode::OpPop) => (format!("{:04} {:04} OP_POP", line, offset)),
-            Ok(OpCode::OpDefine) => {
-                let var_index = chunk.code[offset + 1] as usize;
-                let var_name = &chunk.global_names[var_index + 1];
-                (format!("{:04} {:04} OP_DEFINE {}", line, offset, var_name))
+            Ok(OpCode::OpGetLocal) => {
+                (format!(
+                    "{:04} {:04} OP_GET_LOCAL {}",
+                    line,
+                    offset,
+                    chunk.code[offset + 1]
+                ))
             }
-            Ok(OpCode::OpVariableAccess) => {
-                let var_index = chunk.code[offset + 1] as usize;
-                let var_name = &chunk.global_names[var_index + 1];
-                (format!("{:04} {:04} OP_VARIABLE_ACCESS {}", line, offset, var_name))
+            Ok(OpCode::OpSetLocal) => {
+                (format!(
+                    "{:04} {:04} OP_SET_LOCAL {}",
+                    line,
+                    offset,
+                    chunk.code[offset + 1]
+                ))
             }
             Ok(OpCode::OpConstant) => {
                 let value_index = chunk.code[offset + 1];

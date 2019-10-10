@@ -71,13 +71,6 @@ impl Compiler {
     }
 }
 
-fn compile_error(expr: &Pair<Rule>) -> ! {
-    panic!(
-        "Unexpected state, see stacktrace. Parsed object: {:?}",
-        expr
-    )
-}
-
 fn compile_program(program_node: ProgramNode, chunk: &mut Chunk, compiler: &mut Compiler) {
     for stmt in program_node.statements {
         compile_stmt(stmt, chunk, compiler);
@@ -158,38 +151,6 @@ fn compile_expr(expr: ExprNode, chunk: &mut Chunk, compiler: &mut Compiler) {
     }
 }
 
-fn compile_comparand(comparand: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let mut pairs = comparand.into_inner();
-
-    let factor = pairs.next().unwrap();
-
-    compile_factor(factor, chunk, compiler);
-
-    for add_expr in pairs {
-        compile_add_expr(add_expr, chunk, compiler);
-    }
-}
-
-fn compile_comp_expr(comp_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let mut pairs = comp_expr.into_inner();
-
-    let op = pairs.next().unwrap();
-    let comparand = pairs.next().unwrap();
-
-    compile_comparand(comparand, chunk, compiler);
-    compile_op(op, chunk);
-}
-
-fn compile_add_expr(add_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let mut pairs = add_expr.into_inner();
-
-    let op = pairs.next().unwrap();
-    let factor = pairs.next().unwrap();
-
-    compile_factor(factor, chunk, compiler);
-    compile_op(op, chunk);
-}
-
 fn compile_unary_op(op: UnaryOperation, chunk: &mut Chunk) {
     match op {
         UnaryOperation::Negate => chunk.push_code(OpCode::OpNegate, 0),
@@ -200,59 +161,16 @@ fn compile_unary_op(op: UnaryOperation, chunk: &mut Chunk) {
 fn compile_binary_op(op: BinaryOperation, chunk: &mut Chunk) {
     match op {
         BinaryOperation::Plus => chunk.push_code(OpCode::OpAdd, 0),
-    }
-}
+        BinaryOperation::Minus => chunk.push_code(OpCode::OpSubtract, 0),
+        BinaryOperation::Times => chunk.push_code(OpCode::OpMultiply, 0),
+        BinaryOperation::Divide => chunk.push_code(OpCode::OpDivide, 0),
 
-fn compile_op(op: Pair<Rule>, chunk: &mut Chunk) {
-    match op.as_rule() {
-        Rule::PLUS => chunk.push_code(OpCode::OpAdd, 0),
-        Rule::MINUS => chunk.push_code(OpCode::OpSubtract, 0),
-        Rule::TIMES => chunk.push_code(OpCode::OpMultiply, 0),
-        Rule::DIVIDE => chunk.push_code(OpCode::OpDivide, 0),
-        Rule::NEG => chunk.push_code(OpCode::OpNegate, 0),
-        Rule::NOT => chunk.push_code(OpCode::OpNot, 0),
-        Rule::GEQ => chunk.push_code(OpCode::OpGeq, 0),
-        Rule::GT => chunk.push_code(OpCode::OpGt, 0),
-        Rule::LEQ => chunk.push_code(OpCode::OpLeq, 0),
-        Rule::LT => chunk.push_code(OpCode::OpLt, 0),
-        Rule::EQ => chunk.push_code(OpCode::OpEq, 0),
-        Rule::NEQ => chunk.push_code(OpCode::OpNeq, 0),
-        _ => compile_error(&op),
-    }
-}
-
-fn compile_factor(factor: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let mut pairs = factor.into_inner();
-
-    let primary = pairs.next().unwrap();
-    compile_primary(primary, chunk, compiler);
-    for mul_expr in pairs {
-        compile_mul_expr(mul_expr, chunk, compiler);
-    }
-}
-
-fn compile_mul_expr(mul_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let mut pairs = mul_expr.into_inner();
-
-    let op = pairs.next().unwrap();
-    let primary = pairs.next().unwrap();
-
-    compile_primary(primary, chunk, compiler);
-    compile_op(op, chunk);
-}
-
-fn compile_primary(primary: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let child_pair = primary.into_inner().next().unwrap();
-    let rule = child_pair.as_rule();
-
-    match rule {
-        Rule::ParenExpr => compile_paren_expr(child_pair, chunk, compiler),
-        Rule::Number => compile_number(child_pair, chunk),
-        Rule::FALSE => chunk.push_code(OpCode::OpFalse, 0),
-        Rule::TRUE => chunk.push_code(OpCode::OpTrue, 0),
-        Rule::VariableAccess => compile_variable_access(child_pair, chunk, compiler),
-        Rule::UnaryExpr => compile_unary_expr(child_pair, chunk, compiler),
-        _ => compile_error(&child_pair),
+        BinaryOperation::Eq => chunk.push_code(OpCode::OpEq, 0),
+        BinaryOperation::Neq => chunk.push_code(OpCode::OpNeq, 0),
+        BinaryOperation::Geq => chunk.push_code(OpCode::OpGeq, 0),
+        BinaryOperation::Gt => chunk.push_code(OpCode::OpGt, 0),
+        BinaryOperation::Leq => chunk.push_code(OpCode::OpLeq, 0),
+        BinaryOperation::Lt => chunk.push_code(OpCode::OpLt, 0),
     }
 }
 
@@ -281,11 +199,6 @@ fn compile_variable_access(
     chunk.push_code(var_index as u8, 0);
 }
 
-fn compile_paren_expr(paren_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let child = paren_expr.into_inner().next().unwrap();
-    compile_expr(child, chunk, compiler);
-}
-
 fn compile_number(num: i64, chunk: &mut Chunk) {
     let mut value_index = chunk.push_value(Value::Int(num));
     if value_index < (1 << 8) {
@@ -307,30 +220,5 @@ fn compile_number(num: i64, chunk: &mut Chunk) {
             "Too many constants in scope; got value index {}",
             value_index
         );
-    }
-}
-
-fn compile_unary_expr(unary_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let mut pairs = unary_expr.into_inner();
-
-    let op = pairs.next().unwrap();
-    let primary = pairs.next().unwrap();
-
-    compile_primary(primary, chunk, compiler);
-    compile_op(op, chunk);
-}
-
-fn indent(amt: usize) -> String {
-    let mut s = String::with_capacity(amt);
-    for _ in 0..amt {
-        s.push(' ');
-    }
-    s
-}
-
-pub fn tree_print(x: Pair<Rule>, indentation: usize) {
-    println!("{}{:?}: {}", indent(indentation), x.as_rule(), x.as_str());
-    for pair in x.into_inner() {
-        tree_print(pair, indentation + 2);
     }
 }

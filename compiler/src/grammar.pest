@@ -15,7 +15,9 @@ ReturnStmt = { "return" ~ Expr ~ SEMI }
 Block = { "{" ~ (Stmt)* ~ "}" }
 
 
-Expr = { Factor ~ (AddExpr)* }
+Expr = { Comparand ~ (CompExpr)* }
+CompExpr = { (GEQ | GT | EQ | NEQ | LEQ | LT) ~ Comparand }
+Comparand = { Factor ~ (AddExpr)* }
 AddExpr = { (PLUS | MINUS) ~ Factor }
 Factor = { Primary ~ (MulExpr)* }
 MulExpr = { (TIMES | DIVIDE) ~ Primary }
@@ -23,9 +25,14 @@ MulExpr = { (TIMES | DIVIDE) ~ Primary }
 Primary = {
     ParenExpr |
     Number |
+    TRUE |
+    FALSE |
     VariableAccess |
     UnaryExpr
 }
+
+TRUE = { "true" }
+FALSE = { "false" }
 
 VariableAccess = { ID }
 
@@ -33,7 +40,7 @@ ParenExpr = {
     "(" ~ Expr ~ ")"
 }
 
-UnaryExpr = { NEG ~ Primary }
+UnaryExpr = { (NEG | NOT) ~ Primary }
 
 PLUS = { "+" }
 MINUS = { "-" }
@@ -42,7 +49,15 @@ TIMES = { "*" }
 DIVIDE = { "/" }
 
 NEG = { "-" }
+NOT = { "!" }
 SEMI = { ";" }
+
+GEQ = { ">=" }
+GT = { ">" }
+LEQ = { "<=" }
+LT = { ">" }
+EQ = { "==" }
+NEQ = { "!=" }
 
 Number = @{ ("-")? ~ (ASCII_DIGIT)+ }
 

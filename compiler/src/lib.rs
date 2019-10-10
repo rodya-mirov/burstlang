@@ -8,6 +8,8 @@ pub use pest::{
 
 use bytecode::{Chunk, OpCode, Value};
 
+mod ast;
+
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
 pub struct LoxParser;
@@ -78,14 +80,16 @@ impl Compiler {
     }
 }
 
-pub fn parse_program(input: &str) -> Result<Pair<Rule>, ParseError> {
-    match LoxParser::parse(Rule::Program, input) {
+pub fn parse_program(input: &str) -> Result<ast::AST, ParseError> {
+    let parsed_program = match LoxParser::parse(Rule::Program, input) {
         // Program -> a single Pair, which is the Program
         Ok(mut parsed) => Ok(parsed.next().unwrap()),
         Err(e) => Err(ParseError {
             message: format!("{:?}", e),
         }),
-    }
+    }?;
+
+    Ok(ast::make_ast(parsed_program))
 }
 
 pub fn compile_program(program: Pair<Rule>) -> Chunk {
@@ -168,6 +172,18 @@ fn compile_stmt(stmt: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
 fn compile_expr(expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
     let mut pairs = expr.into_inner();
 
+    let comparand = pairs.next().unwrap();
+
+    compile_comparand(comparand, chunk, compiler);
+
+    for comp_expr in pairs {
+        compile_comp_expr(comp_expr, chunk, compiler);
+    }
+}
+
+fn compile_comparand(comparand: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
+    let mut pairs = comparand.into_inner();
+
     let factor = pairs.next().unwrap();
 
     compile_factor(factor, chunk, compiler);
@@ -175,6 +191,16 @@ fn compile_expr(expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
     for add_expr in pairs {
         compile_add_expr(add_expr, chunk, compiler);
     }
+}
+
+fn compile_comp_expr(comp_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
+    let mut pairs = comp_expr.into_inner();
+
+    let op = pairs.next().unwrap();
+    let comparand = pairs.next().unwrap();
+
+    compile_comparand(comparand, chunk, compiler);
+    compile_op(op, chunk);
 }
 
 fn compile_add_expr(add_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
@@ -194,6 +220,13 @@ fn compile_op(op: Pair<Rule>, chunk: &mut Chunk) {
         Rule::TIMES => chunk.push_code(OpCode::OpMultiply, 0),
         Rule::DIVIDE => chunk.push_code(OpCode::OpDivide, 0),
         Rule::NEG => chunk.push_code(OpCode::OpNegate, 0),
+        Rule::NOT => chunk.push_code(OpCode::OpNot, 0),
+        Rule::GEQ => chunk.push_code(OpCode::OpGeq, 0),
+        Rule::GT => chunk.push_code(OpCode::OpGt, 0),
+        Rule::LEQ => chunk.push_code(OpCode::OpLeq, 0),
+        Rule::LT => chunk.push_code(OpCode::OpLt, 0),
+        Rule::EQ => chunk.push_code(OpCode::OpEq, 0),
+        Rule::NEQ => chunk.push_code(OpCode::OpNeq, 0),
         _ => compile_error(&op),
     }
 }
@@ -225,6 +258,8 @@ fn compile_primary(primary: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compil
     match rule {
         Rule::ParenExpr => compile_paren_expr(child_pair, chunk, compiler),
         Rule::Number => compile_number(child_pair, chunk),
+        Rule::FALSE => chunk.push_code(OpCode::OpFalse, 0),
+        Rule::TRUE => chunk.push_code(OpCode::OpTrue, 0),
         Rule::VariableAccess => compile_variable_access(child_pair, chunk, compiler),
         Rule::UnaryExpr => compile_unary_expr(child_pair, chunk, compiler),
         _ => compile_error(&child_pair),
@@ -261,7 +296,7 @@ fn compile_number(number: Pair<Rule>, chunk: &mut Chunk) {
     let string = number.as_str();
     let num: i64 = string.parse().expect("Number should be parseable");
 
-    let mut value_index = chunk.push_value(Value(num));
+    let mut value_index = chunk.push_value(Value::Int(num));
     if value_index < (1 << 8) {
         chunk.push_code(OpCode::OpConstant, 0);
         chunk.push_code(value_index as u8, 0);

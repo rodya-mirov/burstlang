@@ -9,12 +9,20 @@ pub enum OpCode {
 
     // Unary Operations
     OpNegate = 4,
+    OpNot = 15,
 
     // Binary Operations
     OpAdd = 5,
     OpSubtract = 6,
     OpMultiply = 7,
     OpDivide = 8,
+
+    OpGeq = 16,
+    OpGt = 17,
+    OpLeq = 18,
+    OpLt = 19,
+    OpEq = 20,
+    OpNeq = 21,
 
     // Other
     OpPrint = 9,
@@ -26,6 +34,10 @@ pub enum OpCode {
     // scope at once, this representation blows up.
     OpGetLocal = 11, // access the value at this byte
     OpSetLocal = 12, // set the value at this byte; note this is for DEFINITION not reassignment
+
+    // Some magic constant operations
+    OpTrue = 13,
+    OpFalse = 14,
 }
 
 impl std::convert::TryFrom<u8> for OpCode {
@@ -44,6 +56,15 @@ impl std::convert::TryFrom<u8> for OpCode {
             10 => Ok(OpCode::OpPop),
             11 => Ok(OpCode::OpGetLocal),
             12 => Ok(OpCode::OpSetLocal),
+            13 => Ok(OpCode::OpTrue),
+            14 => Ok(OpCode::OpFalse),
+            15 => Ok(OpCode::OpNot),
+            16 => Ok(OpCode::OpGeq),
+            17 => Ok(OpCode::OpGt),
+            18 => Ok(OpCode::OpLeq),
+            19 => Ok(OpCode::OpLt),
+            20 => Ok(OpCode::OpEq),
+            21 => Ok(OpCode::OpNeq),
             _ => Err(val),
         }
     }
@@ -67,12 +88,19 @@ impl OpCode {
 
             // unary operations
             OpCode::OpNegate => 1,
+            OpCode::OpNot => 1,
 
             // binary operations
             OpCode::OpAdd => 1,
             OpCode::OpSubtract => 1,
             OpCode::OpMultiply => 1,
             OpCode::OpDivide => 1,
+            OpCode::OpGeq => 1,
+            OpCode::OpGt => 1,
+            OpCode::OpLeq => 1,
+            OpCode::OpLt => 1,
+            OpCode::OpEq => 1,
+            OpCode::OpNeq => 1,
 
             // Other
             OpCode::OpPrint => 1,
@@ -81,12 +109,27 @@ impl OpCode {
             // Locals stuff; operand is place on the stack to put the value
             OpCode::OpGetLocal => 2,
             OpCode::OpSetLocal => 2,
+
+            OpCode::OpTrue => 1,
+            OpCode::OpFalse => 1,
         }
     }
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Value(pub i64);
+pub enum Value {
+    Int(i64),
+    Bool(bool),
+}
+
+impl Value {
+    pub fn as_kind(&self) -> &'static str {
+        match self {
+            Value::Int(_) => "int",
+            Value::Bool(_) => "bool",
+        }
+    }
+}
 
 pub struct Chunk {
     // Stored contiguously; some of these are OpCodes, and some are operands
@@ -194,12 +237,21 @@ pub mod disassemble {
         let string_out = match op_code {
             Ok(OpCode::OpReturn) => (format!("{:04} {:04} OP_RETURN", line, offset)),
             Ok(OpCode::OpNegate) => (format!("{:04} {:04} OP_NEGATE", line, offset)),
+            Ok(OpCode::OpGeq) => (format!("{:04} {:04} OP_GEQ", line, offset)),
+            Ok(OpCode::OpGt) => (format!("{:04} {:04} OP_GT", line, offset)),
+            Ok(OpCode::OpLeq) => (format!("{:04} {:04} OP_LEQ", line, offset)),
+            Ok(OpCode::OpLt) => (format!("{:04} {:04} OP_LT", line, offset)),
+            Ok(OpCode::OpEq) => (format!("{:04} {:04} OP_EQ", line, offset)),
+            Ok(OpCode::OpNeq) => (format!("{:04} {:04} OP_NEQ", line, offset)),
+            Ok(OpCode::OpNot) => (format!("{:04} {:04} OP_NOT", line, offset)),
             Ok(OpCode::OpAdd) => (format!("{:04} {:04} OP_ADD", line, offset)),
             Ok(OpCode::OpSubtract) => (format!("{:04} {:04} OP_SUBTRACT", line, offset)),
             Ok(OpCode::OpMultiply) => (format!("{:04} {:04} OP_MULTIPLY", line, offset)),
             Ok(OpCode::OpDivide) => (format!("{:04} {:04} OP_DIVIDE", line, offset)),
             Ok(OpCode::OpPrint) => (format!("{:04} {:04} OP_PRINT", line, offset)),
             Ok(OpCode::OpPop) => (format!("{:04} {:04} OP_POP", line, offset)),
+            Ok(OpCode::OpTrue) => (format!("{:04} {:04} OP_TRUE", line, offset)),
+            Ok(OpCode::OpFalse) => (format!("{:04} {:04} OP_FALSE", line, offset)),
             Ok(OpCode::OpGetLocal) => {
                 (format!(
                     "{:04} {:04} OP_GET_LOCAL {}",
@@ -220,7 +272,7 @@ pub mod disassemble {
                 let value_index = chunk.code[offset + 1];
                 let value = chunk.get_value(value_index as usize);
                 match value {
-                    Some(v) => (format!("{:04} {:04} OP_CONSTANT -- {}", line, offset, v.0)),
+                    Some(v) => (format!("{:04} {:04} OP_CONSTANT -- {:?}", line, offset, v)),
                     None => {
                         (format!(
                             "{:04} OP_CONSTANT -- index {} which is missing",
@@ -237,7 +289,7 @@ pub mod disassemble {
                 );
                 let value = chunk.get_value(value_index);
                 match value {
-                    Some(v) => (format!("{:04} {:04} OP_CONSTANT_LONG -- {}", line, offset, v.0)),
+                    Some(v) => (format!("{:04} {:04} OP_CONSTANT_LONG -- {:?}", line, offset, v)),
                     None => {
                         (format!(
                             "{:04} OP_CONSTANT_LONG -- index {} which is missing",

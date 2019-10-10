@@ -1,23 +1,14 @@
-#[macro_use]
-extern crate pest_derive;
-
-pub use pest::{
-    iterators::{Pair, Pairs},
-    Parser,
-};
-
 use bytecode::{Chunk, OpCode, Value};
 
-mod ast;
+use super::*;
 
-#[derive(Parser)]
-#[grammar = "grammar.pest"]
-pub struct LoxParser;
+pub fn compile_ast(ast: AST) -> Chunk {
+    let mut compiler = Compiler::init();
+    let mut chunk = Chunk::init();
 
-#[derive(Debug, Clone)]
-pub struct ParseError {
-    // TODO: structured line/char information
-    message: String,
+    compile_program(ast.root, &mut chunk, &mut compiler);
+
+    chunk
 }
 
 struct Compiler {
@@ -80,37 +71,6 @@ impl Compiler {
     }
 }
 
-pub fn parse_program(input: &str) -> Result<ast::AST, ParseError> {
-    let parsed_program = match LoxParser::parse(Rule::Program, input) {
-        // Program -> a single Pair, which is the Program
-        Ok(mut parsed) => Ok(parsed.next().unwrap()),
-        Err(e) => Err(ParseError {
-            message: format!("{:?}", e),
-        }),
-    }?;
-
-    Ok(ast::make_ast(parsed_program))
-}
-
-pub fn compile_ast(ast: ast::AST) -> Chunk {
-    ast::compile_ast(ast)
-}
-
-pub fn compile_program(program: Pair<Rule>) -> Chunk {
-    let mut compiler = Compiler::init();
-    let mut chunk = Chunk::init();
-
-    for stmt in program.into_inner() {
-        match stmt.as_rule() {
-            Rule::Stmt => compile_stmt(stmt, &mut chunk, &mut compiler),
-            Rule::EOI => {}
-            _ => unreachable!(),
-        }
-    }
-
-    chunk
-}
-
 fn compile_error(expr: &Pair<Rule>) -> ! {
     panic!(
         "Unexpected state, see stacktrace. Parsed object: {:?}",
@@ -118,70 +78,83 @@ fn compile_error(expr: &Pair<Rule>) -> ! {
     )
 }
 
-fn compile_stmt(stmt: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let mut stmt_pairs = stmt.into_inner();
+fn compile_program(program_node: ProgramNode, chunk: &mut Chunk, compiler: &mut Compiler) {
+    for stmt in program_node.statements {
+        compile_stmt(stmt, chunk, compiler);
+    }
+}
 
-    let only_child = stmt_pairs.next().unwrap();
+fn compile_stmt(stmt: StatementNode, chunk: &mut Chunk, compiler: &mut Compiler) {
+    use StatementNode::*;
 
-    let rule = only_child.as_rule();
-    let mut pairs = only_child.into_inner();
-
-    match rule {
-        Rule::ExprStmt => {
-            let expr = pairs.next().unwrap();
-            compile_expr(expr, chunk, compiler);
+    match stmt {
+        ExprStmt(expr_stmt_node) => {
+            compile_expr(expr_stmt_node.expr, chunk, compiler);
             chunk.push_code(OpCode::OpPop, 0);
         }
-        Rule::ReturnStmt => unimplemented!(),
-        Rule::Block => {
+        ReturnStmt(return_stmt_node) => {
+            compile_expr(return_stmt_node.expr, chunk, compiler);
+            chunk.push_code(OpCode::OpReturn, 0);
+        }
+        Block(block) => {
             compiler.enter_scope();
-            for pair in pairs {
-                compile_stmt(pair, chunk, compiler);
+
+            for stmt in block.statements {
+                compile_stmt(stmt, chunk, compiler);
             }
+
             let removed_variables = compiler.exit_scope();
+
             for _ in 0..removed_variables {
                 chunk.push_code(OpCode::OpPop, 0);
             }
         }
-        Rule::PrintStmt => {
-            let expr = pairs.next().unwrap();
-            compile_expr(expr, chunk, compiler);
+        PrintStmt(print_stmt_node) => {
+            compile_expr(print_stmt_node.expr, chunk, compiler);
             chunk.push_code(OpCode::OpPrint, 0);
         }
-        Rule::VarDefnStmt => {
-            let var_name = pairs.next().unwrap().as_str();
+        VarDefnStmt(var_defn_node) => {
+            let var_name = var_defn_node.var_name;
 
             // TODO: descriptive error ("the name is in use!")
             // Note: this (intentionally) prevents shadowing.
-            let var_index = compiler.add_local(var_name).unwrap();
+            let var_index = compiler.add_local(&var_name).unwrap();
 
             if var_index >= 256 {
                 panic!("Cannot handle 256 variables!");
             }
 
-            let expr = pairs.next().unwrap();
-
-            compile_expr(expr, chunk, compiler);
+            compile_expr(var_defn_node.expr, chunk, compiler);
 
             chunk.push_code(OpCode::OpSetLocal, 0);
             chunk.push_code(var_index as u8, 0);
         }
-        other => panic!(
-            "Unexpected rule {:?} when compiling statement; this is a code bug",
-            other
-        ),
     }
 }
 
-fn compile_expr(expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let mut pairs = expr.into_inner();
+fn compile_expr(expr: ExprNode, chunk: &mut Chunk, compiler: &mut Compiler) {
+    use ExprNode::*;
 
-    let comparand = pairs.next().unwrap();
-
-    compile_comparand(comparand, chunk, compiler);
-
-    for comp_expr in pairs {
-        compile_comp_expr(comp_expr, chunk, compiler);
+    match expr {
+        Unary(unary_expr) => {
+            let unary_expr: UnaryExprNode = *unary_expr;
+            compile_expr(unary_expr.expr, chunk, compiler);
+            compile_unary_op(unary_expr.unary_op, chunk);
+        }
+        Binary(binary_expr) => {
+            let binary_expr: BinaryExprNode = *binary_expr;
+            compile_expr(binary_expr.a, chunk, compiler);
+            compile_expr(binary_expr.b, chunk, compiler);
+            compile_binary_op(binary_expr.binary_op, chunk);
+        }
+        Constant(constant_node) => match constant_node {
+            ConstantExprNode::Boolean(true) => chunk.push_code(OpCode::OpTrue, 0),
+            ConstantExprNode::Boolean(false) => chunk.push_code(OpCode::OpFalse, 0),
+            ConstantExprNode::Integer(num) => compile_number(num, chunk),
+        },
+        VariableAccess(var_access) => {
+            compile_variable_access(var_access, chunk, compiler);
+        }
     }
 }
 
@@ -215,6 +188,19 @@ fn compile_add_expr(add_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Comp
 
     compile_factor(factor, chunk, compiler);
     compile_op(op, chunk);
+}
+
+fn compile_unary_op(op: UnaryOperation, chunk: &mut Chunk) {
+    match op {
+        UnaryOperation::Negate => chunk.push_code(OpCode::OpNegate, 0),
+        UnaryOperation::Not => chunk.push_code(OpCode::OpNot, 0),
+    }
+}
+
+fn compile_binary_op(op: BinaryOperation, chunk: &mut Chunk) {
+    match op {
+        BinaryOperation::Plus => chunk.push_code(OpCode::OpAdd, 0),
+    }
 }
 
 fn compile_op(op: Pair<Rule>, chunk: &mut Chunk) {
@@ -270,9 +256,13 @@ fn compile_primary(primary: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compil
     }
 }
 
-fn compile_variable_access(var: Pair<Rule>, chunk: &mut Chunk, compiler: &mut Compiler) {
-    let var_name = var.as_str();
-    let var_index = compiler.get_local_index(var_name);
+fn compile_variable_access(
+    var: VariableAccessExprNode,
+    chunk: &mut Chunk,
+    compiler: &mut Compiler,
+) {
+    let var_name = var.var_name;
+    let var_index = compiler.get_local_index(&var_name);
 
     if var_index.is_none() {
         panic!(
@@ -296,10 +286,7 @@ fn compile_paren_expr(paren_expr: Pair<Rule>, chunk: &mut Chunk, compiler: &mut 
     compile_expr(child, chunk, compiler);
 }
 
-fn compile_number(number: Pair<Rule>, chunk: &mut Chunk) {
-    let string = number.as_str();
-    let num: i64 = string.parse().expect("Number should be parseable");
-
+fn compile_number(num: i64, chunk: &mut Chunk) {
     let mut value_index = chunk.push_value(Value::Int(num));
     if value_index < (1 << 8) {
         chunk.push_code(OpCode::OpConstant, 0);

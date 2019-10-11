@@ -5,6 +5,9 @@ Stmt = {
     PrintStmt |
     ReturnStmt |
     VarDefnStmt |
+    IfElseStmt |
+    IfStmt |
+    WhileLoop |
     Block
 }
 
@@ -12,7 +15,12 @@ ExprStmt = { Expr ~ SEMI }
 PrintStmt = { "print" ~ Expr ~ SEMI }
 VarDefnStmt = { "let" ~ ID ~ "=" ~ Expr ~ SEMI }
 ReturnStmt = { "return" ~ Expr ~ SEMI }
+IfStmt = { "if" ~ "(" ~ Expr ~ ")" ~ Block }
+IfElseStmt = { "if" ~ "(" ~ Expr ~ ")" ~ Block ~ "else" ~ Block }
 Block = { "{" ~ (Stmt)* ~ "}" }
+WhileLoop = {
+    "while" ~ "(" ~ Expr ~ ")" ~ Block
+}
 
 
 Expr = { Comparand ~ (CompExpr)* }
@@ -55,7 +63,7 @@ SEMI = { ";" }
 GEQ = { ">=" }
 GT = { ">" }
 LEQ = { "<=" }
-LT = { ">" }
+LT = { "<" }
 EQ = { "==" }
 NEQ = { "!=" }
 

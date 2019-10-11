@@ -40,7 +40,29 @@ pub enum StatementNode {
     PrintStmt(PrintStmtNode),
     ReturnStmt(ReturnStmtNode),
     VarDefnStmt(VarDefnStmtNode),
+    IfStmt(IfStmtNode),
+    IfElseStmt(IfElseStmtNode),
+    WhileLoop(WhileLoopNode),
     Block(BlockNode),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct IfStmtNode {
+    cond: ExprNode,
+    if_block: BlockNode,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct IfElseStmtNode {
+    cond: ExprNode,
+    if_block: BlockNode,
+    else_block: BlockNode,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct WhileLoopNode {
+    cond: ExprNode,
+    block: BlockNode,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

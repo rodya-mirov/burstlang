@@ -1,5 +1,5 @@
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum OpCode {
     OpReturn = 1,
 
@@ -38,6 +38,12 @@ pub enum OpCode {
     // Some magic constant operations
     OpTrue = 13,
     OpFalse = 14,
+
+    // Control flow
+    OpJump = 22,            // 2 operands; 2-byte "jump by this (two-byte) amount"
+    OpJumpIfFalsePeek = 23, // 2 operands; 2-byte jump amount (peek at stack and maybe jump but don't pop)
+    OpJumpIfFalsePop = 24,  // 2 operands; 2-byte jump amount (pop from stack and maybe jump)
+    OpJumpBack = 25,        // 2 operands; 2-byte "jump BACKWARDS this amount"
 }
 
 impl std::convert::TryFrom<u8> for OpCode {
@@ -65,6 +71,10 @@ impl std::convert::TryFrom<u8> for OpCode {
             19 => Ok(OpCode::OpLt),
             20 => Ok(OpCode::OpEq),
             21 => Ok(OpCode::OpNeq),
+            22 => Ok(OpCode::OpJump),
+            23 => Ok(OpCode::OpJumpIfFalsePeek),
+            24 => Ok(OpCode::OpJumpIfFalsePop),
+            25 => Ok(OpCode::OpJumpBack),
             _ => Err(val),
         }
     }
@@ -112,6 +122,11 @@ impl OpCode {
 
             OpCode::OpTrue => 1,
             OpCode::OpFalse => 1,
+
+            OpCode::OpJump => 3,
+            OpCode::OpJumpIfFalsePeek => 3,
+            OpCode::OpJumpIfFalsePop => 3,
+            OpCode::OpJumpBack => 3,
         }
     }
 }
@@ -136,8 +151,6 @@ pub struct Chunk {
     code: Vec<u8>,
     // Some bytes in code are casted to indices in values; this is the constant pool
     values: Vec<Value>,
-    // Reserved variable names; currently everything is global scoped?
-    global_names: Vec<String>,
     // TODO: do a run-length encoding; currently this is in 1-1 correspondence with code
     lines: Vec<usize>,
 }
@@ -147,34 +160,8 @@ impl Chunk {
         Chunk {
             code: Vec::new(),
             values: Vec::new(),
-            global_names: Vec::new(),
             lines: Vec::new(),
         }
-    }
-
-    #[deprecated]
-    pub fn register_global(&mut self, var_name: &str) -> usize {
-        for (i, existing) in self.global_names.iter().enumerate() {
-            if existing == var_name {
-                return i;
-            }
-        }
-        self.global_names.push(var_name.to_string());
-        self.global_names.len() - 1
-    }
-
-    #[deprecated]
-    pub fn get_global_name(&self, var_index: usize) -> Option<&str> {
-        if var_index < self.global_names.len() {
-            Some(&self.global_names[var_index])
-        } else {
-            None
-        }
-    }
-
-    #[deprecated]
-    pub fn num_globals(&self) -> usize {
-        self.global_names.len()
     }
 
     pub fn push_value(&mut self, val: Value) -> usize {
@@ -191,6 +178,13 @@ impl Chunk {
         self.lines.push(line);
     }
 
+    pub fn set_code<T>(&mut self, code: T, offset: usize)
+    where
+        T: Into<u8>,
+    {
+        self.code[offset] = code.into();
+    }
+
     #[inline(always)]
     pub fn get_code(&self) -> &[u8] {
         &self.code
@@ -204,17 +198,29 @@ impl Chunk {
     pub fn get_value(&self, index: usize) -> Option<Value> {
         self.values.get(index).copied()
     }
+
+    #[inline(always)]
+    pub fn get_two_bytes(&self, index: usize) -> usize {
+        ((self.code[index] as usize) << 8) + (self.code[index + 1] as usize)
+    }
+
+    #[inline(always)]
+    pub fn get_three_bytes(&self, index: usize) -> usize {
+        ((self.code[index] as usize) << 16)
+            + ((self.code[index + 1] as usize) << 8)
+            + ((self.code[index + 2]) as usize)
+    }
 }
 
 pub mod disassemble {
     use std::convert::TryInto;
 
-    use super::{make_three_byte_index, Chunk, OpCode};
+    use super::{Chunk, OpCode};
 
     pub fn disassemble_chunk(chunk: &Chunk, name: &str) -> String {
         let mut out = String::new();
 
-        out.push_str(&format!("=== {} ===", name));
+        out.push_str(&format!("=== {} ===\n", name));
 
         let mut index = 0;
 
@@ -235,26 +241,26 @@ pub mod disassemble {
 
         let op_code = code.try_into();
         let string_out = match op_code {
-            Ok(OpCode::OpReturn) => (format!("{:04} {:04} OP_RETURN", line, offset)),
-            Ok(OpCode::OpNegate) => (format!("{:04} {:04} OP_NEGATE", line, offset)),
-            Ok(OpCode::OpGeq) => (format!("{:04} {:04} OP_GEQ", line, offset)),
-            Ok(OpCode::OpGt) => (format!("{:04} {:04} OP_GT", line, offset)),
-            Ok(OpCode::OpLeq) => (format!("{:04} {:04} OP_LEQ", line, offset)),
-            Ok(OpCode::OpLt) => (format!("{:04} {:04} OP_LT", line, offset)),
-            Ok(OpCode::OpEq) => (format!("{:04} {:04} OP_EQ", line, offset)),
-            Ok(OpCode::OpNeq) => (format!("{:04} {:04} OP_NEQ", line, offset)),
-            Ok(OpCode::OpNot) => (format!("{:04} {:04} OP_NOT", line, offset)),
-            Ok(OpCode::OpAdd) => (format!("{:04} {:04} OP_ADD", line, offset)),
-            Ok(OpCode::OpSubtract) => (format!("{:04} {:04} OP_SUBTRACT", line, offset)),
-            Ok(OpCode::OpMultiply) => (format!("{:04} {:04} OP_MULTIPLY", line, offset)),
-            Ok(OpCode::OpDivide) => (format!("{:04} {:04} OP_DIVIDE", line, offset)),
-            Ok(OpCode::OpPrint) => (format!("{:04} {:04} OP_PRINT", line, offset)),
-            Ok(OpCode::OpPop) => (format!("{:04} {:04} OP_POP", line, offset)),
-            Ok(OpCode::OpTrue) => (format!("{:04} {:04} OP_TRUE", line, offset)),
-            Ok(OpCode::OpFalse) => (format!("{:04} {:04} OP_FALSE", line, offset)),
+            Ok(OpCode::OpReturn) => (format!("{:04} {:04} OP_RETURN\n", line, offset)),
+            Ok(OpCode::OpNegate) => (format!("{:04} {:04} OP_NEGATE\n", line, offset)),
+            Ok(OpCode::OpGeq) => (format!("{:04} {:04} OP_GEQ\n", line, offset)),
+            Ok(OpCode::OpGt) => (format!("{:04} {:04} OP_GT\n", line, offset)),
+            Ok(OpCode::OpLeq) => (format!("{:04} {:04} OP_LEQ\n", line, offset)),
+            Ok(OpCode::OpLt) => (format!("{:04} {:04} OP_LT\n", line, offset)),
+            Ok(OpCode::OpEq) => (format!("{:04} {:04} OP_EQ\n", line, offset)),
+            Ok(OpCode::OpNeq) => (format!("{:04} {:04} OP_NEQ\n", line, offset)),
+            Ok(OpCode::OpNot) => (format!("{:04} {:04} OP_NOT\n", line, offset)),
+            Ok(OpCode::OpAdd) => (format!("{:04} {:04} OP_ADD\n", line, offset)),
+            Ok(OpCode::OpSubtract) => (format!("{:04} {:04} OP_SUBTRACT\n", line, offset)),
+            Ok(OpCode::OpMultiply) => (format!("{:04} {:04} OP_MULTIPLY\n", line, offset)),
+            Ok(OpCode::OpDivide) => (format!("{:04} {:04} OP_DIVIDE\n", line, offset)),
+            Ok(OpCode::OpPrint) => (format!("{:04} {:04} OP_PRINT\n", line, offset)),
+            Ok(OpCode::OpPop) => (format!("{:04} {:04} OP_POP\n", line, offset)),
+            Ok(OpCode::OpTrue) => (format!("{:04} {:04} OP_TRUE\n", line, offset)),
+            Ok(OpCode::OpFalse) => (format!("{:04} {:04} OP_FALSE\n", line, offset)),
             Ok(OpCode::OpGetLocal) => {
                 (format!(
-                    "{:04} {:04} OP_GET_LOCAL {}",
+                    "{:04} {:04} OP_GET_LOCAL {}\n",
                     line,
                     offset,
                     chunk.code[offset + 1]
@@ -262,7 +268,7 @@ pub mod disassemble {
             }
             Ok(OpCode::OpSetLocal) => {
                 (format!(
-                    "{:04} {:04} OP_SET_LOCAL {}",
+                    "{:04} {:04} OP_SET_LOCAL {}\n",
                     line,
                     offset,
                     chunk.code[offset + 1]
@@ -272,33 +278,57 @@ pub mod disassemble {
                 let value_index = chunk.code[offset + 1];
                 let value = chunk.get_value(value_index as usize);
                 match value {
-                    Some(v) => (format!("{:04} {:04} OP_CONSTANT -- {:?}", line, offset, v)),
+                    Some(v) => (format!("{:04} {:04} OP_CONSTANT -- {:?}\n", line, offset, v)),
                     None => {
                         (format!(
-                            "{:04} OP_CONSTANT -- index {} which is missing",
+                            "{:04} OP_CONSTANT -- index {} which is missing\n",
                             offset, value_index
                         ))
                     }
                 }
             }
             Ok(OpCode::OpConstantLong) => {
-                let value_index = make_three_byte_index(
-                    chunk.code[offset + 1],
-                    chunk.code[offset + 2],
-                    chunk.code[offset + 3],
-                );
+                let value_index = chunk.get_three_bytes(offset + 1);
                 let value = chunk.get_value(value_index);
                 match value {
-                    Some(v) => (format!("{:04} {:04} OP_CONSTANT_LONG -- {:?}", line, offset, v)),
+                    Some(v) => (format!("{:04} {:04} OP_CONSTANT_LONG -- {:?}\n", line, offset, v)),
                     None => {
                         (format!(
-                            "{:04} OP_CONSTANT_LONG -- index {} which is missing",
+                            "{:04} OP_CONSTANT_LONG -- index {} which is missing\n",
                             offset, value_index
                         ))
                     }
                 }
             }
-            Err(val) => (format!("{:04} {:04} Unrecognized code: {}", line, offset, val)),
+            Ok(OpCode::OpJump) => {
+                let jump_offset = chunk.get_two_bytes(offset + 1);
+                format!(
+                    "{:04} {:04} OP_JUMP by {} (+3)\n",
+                    line, offset, jump_offset
+                )
+            }
+            Ok(OpCode::OpJumpBack) => {
+                let jump_offset = chunk.get_two_bytes(offset + 1);
+                format!(
+                    "{:04} {:04} OP_JUMP_BACK by {} (-3)\n",
+                    line, offset, jump_offset
+                )
+            }
+            Ok(OpCode::OpJumpIfFalsePeek) => {
+                let jump_offset = chunk.get_two_bytes(offset + 1);
+                format!(
+                    "{:04} {:04} OP_JUMP_IF_FALSE_PEEK by {} (+3)\n",
+                    line, offset, jump_offset
+                )
+            }
+            Ok(OpCode::OpJumpIfFalsePop) => {
+                let jump_offset = chunk.get_two_bytes(offset + 1);
+                format!(
+                    "{:04} {:04} OP_JUMP_IF_FALSE_POP by {} (+3)\n",
+                    line, offset, jump_offset
+                )
+            }
+            Err(val) => (format!("{:04} {:04} Unrecognized code: {}\n", line, offset, val)),
         };
 
         *offset_ptr += match op_code {
@@ -309,10 +339,6 @@ pub mod disassemble {
 
         (string_out)
     }
-}
-
-pub fn make_three_byte_index(a: u8, b: u8, c: u8) -> usize {
-    ((a as usize) << 16) + ((b as usize) << 8) + (c as usize)
 }
 
 // TODO: much of this is unit testable

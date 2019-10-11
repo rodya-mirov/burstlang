@@ -8,12 +8,19 @@ fn main() {
     let stdin = std::io::stdin();
 
     for line in stdin.lock().lines() {
+        println!();
+
         match line {
             Ok(line) => {
                 let parsed = compiler::parse_program(&line);
                 match parsed {
                     Ok(ast) => {
                         let mut chunk = compiler::compile_ast(ast);
+
+                        println!(
+                            "{}",
+                            bytecode::disassemble::disassemble_chunk(&chunk, "My Program")
+                        );
 
                         chunk.push_code(bytecode::OpCode::OpReturn, 0);
 

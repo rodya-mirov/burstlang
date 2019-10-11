@@ -90,21 +90,17 @@ fn compile_stmt(stmt: StatementNode, chunk: &mut Chunk, compiler: &mut Compiler)
             chunk.push_code(OpCode::OpReturn, 0);
         }
         Block(block) => {
-            compiler.enter_scope();
-
-            for stmt in block.statements {
-                compile_stmt(stmt, chunk, compiler);
-            }
-
-            let removed_variables = compiler.exit_scope();
-
-            for _ in 0..removed_variables {
-                chunk.push_code(OpCode::OpPop, 0);
-            }
+            compile_block(block, chunk, compiler);
         }
         PrintStmt(print_stmt_node) => {
             compile_expr(print_stmt_node.expr, chunk, compiler);
             chunk.push_code(OpCode::OpPrint, 0);
+        }
+        IfStmt(if_stmt_node) => {
+            compile_if_stmt(if_stmt_node, chunk, compiler);
+        }
+        IfElseStmt(if_else_stmt_node) => {
+            compile_if_else_stmt(if_else_stmt_node, chunk, compiler);
         }
         VarDefnStmt(var_defn_node) => {
             let var_name = var_defn_node.var_name;
@@ -113,7 +109,7 @@ fn compile_stmt(stmt: StatementNode, chunk: &mut Chunk, compiler: &mut Compiler)
             // Note: this (intentionally) prevents shadowing.
             let var_index = compiler.add_local(&var_name).unwrap();
 
-            if var_index >= 256 {
+            if var_index >= (1 << 8) {
                 panic!("Cannot handle 256 variables!");
             }
 
@@ -122,7 +118,123 @@ fn compile_stmt(stmt: StatementNode, chunk: &mut Chunk, compiler: &mut Compiler)
             chunk.push_code(OpCode::OpSetLocal, 0);
             chunk.push_code(var_index as u8, 0);
         }
+        WhileLoop(while_loop_node) => compile_while_loop(while_loop_node, chunk, compiler),
     }
+}
+
+fn compile_while_loop(while_loop_node: WhileLoopNode, chunk: &mut Chunk, compiler: &mut Compiler) {
+    let loop_start = chunk.get_code().len();
+
+    compile_expr(while_loop_node.cond, chunk, compiler);
+
+    chunk.push_code(OpCode::OpJumpIfFalsePop, 0);
+
+    let skip_jump_offset = chunk.get_code().len();
+
+    chunk.push_code(0, 0);
+    chunk.push_code(0, 0);
+
+    compile_block(while_loop_node.block, chunk, compiler);
+
+    // this is how far back we need to jump to get back to the condition
+    // note we +3 because we haven't added the jumpback or its operands yet,
+    // and those are gonna get consumed, but we need to jump back behind them too
+    let jump_back_len = chunk.get_code().len() - loop_start + 3;
+    let jump_back_bytes = to_two_bytes(jump_back_len);
+
+    chunk.push_code(OpCode::OpJumpBack, 0);
+    chunk.push_code(jump_back_bytes.0, 0);
+    chunk.push_code(jump_back_bytes.1, 0);
+
+    // this is how far forward from the cond-false-jump
+    // note we -2 because the jump consumes its own operands
+    let skip_jump_len = chunk.get_code().len() - skip_jump_offset - 2;
+    let skip_jump_bytes = to_two_bytes(skip_jump_len);
+
+    chunk.set_code(skip_jump_bytes.0, skip_jump_offset);
+    chunk.set_code(skip_jump_bytes.1, skip_jump_offset + 1);
+}
+
+fn compile_block(block: BlockNode, chunk: &mut Chunk, compiler: &mut Compiler) {
+    compiler.enter_scope();
+
+    for stmt in block.statements {
+        compile_stmt(stmt, chunk, compiler);
+    }
+
+    let removed_variables = compiler.exit_scope();
+
+    for _ in 0..removed_variables {
+        chunk.push_code(OpCode::OpPop, 0);
+    }
+}
+
+fn compile_if_stmt(if_stmt_node: IfStmtNode, chunk: &mut Chunk, compiler: &mut Compiler) {
+    // first grab the expression
+    compile_expr(if_stmt_node.cond, chunk, compiler);
+
+    // pop the expression value and maybe jump
+    chunk.push_code(OpCode::OpJumpIfFalsePop, 0);
+    let jump_start_offset = chunk.get_code().len();
+
+    // we don't know to where; we'll comback
+    chunk.push_code(0, 0);
+    chunk.push_code(0, 0);
+
+    // compile the "if" block; this will be jumped over if the condition is false
+    compile_block(if_stmt_node.if_block, chunk, compiler);
+
+    // now we know where to jump to
+    let block_length = chunk.get_code().len() - jump_start_offset - 2;
+    let jump = to_two_bytes(block_length);
+
+    chunk.set_code(jump.0, jump_start_offset);
+    chunk.set_code(jump.1, jump_start_offset + 1);
+}
+
+fn compile_if_else_stmt(
+    if_else_stmt_node: IfElseStmtNode,
+    chunk: &mut Chunk,
+    compiler: &mut Compiler,
+) {
+    // first grab the expression
+    compile_expr(if_else_stmt_node.cond, chunk, compiler);
+
+    // pop the expression value and maybe jump
+    chunk.push_code(OpCode::OpJumpIfFalsePop, 0);
+    let jump_to_else_start_offset = chunk.get_code().len();
+
+    // we don't know to where; we'll comback
+    chunk.push_code(0, 0);
+    chunk.push_code(0, 0);
+
+    // compile the "if" block; this will be jumped over if the condition is false
+    compile_block(if_else_stmt_node.if_block, chunk, compiler);
+
+    // at the end of the "if" we need to jump past the "else" so start tracking the next jump
+    chunk.push_code(OpCode::OpJump, 0);
+    let jump_past_else_start_offset = chunk.get_code().len();
+
+    // location of second jump; 0 for now and we'll come back
+    chunk.push_code(0, 0);
+    chunk.push_code(0, 0);
+
+    // the "else" starts here, so now we know where to jump to at the start
+    // note we subtract two since the jump consumes its operands, so we don't want to double count
+    let jump_length = chunk.get_code().len() - jump_to_else_start_offset - 2;
+    let jump = to_two_bytes(jump_length);
+
+    chunk.set_code(jump.0, jump_to_else_start_offset);
+    chunk.set_code(jump.1, jump_to_else_start_offset + 1);
+
+    // now compile the "else" block ...
+    compile_block(if_else_stmt_node.else_block, chunk, compiler);
+
+    let jump_length = chunk.get_code().len() - jump_past_else_start_offset - 2;
+    let jump = to_two_bytes(jump_length);
+
+    chunk.set_code(jump.0, jump_past_else_start_offset);
+    chunk.set_code(jump.1, jump_past_else_start_offset + 1);
 }
 
 fn compile_expr(expr: ExprNode, chunk: &mut Chunk, compiler: &mut Compiler) {
@@ -200,16 +312,12 @@ fn compile_variable_access(
 }
 
 fn compile_number(num: i64, chunk: &mut Chunk) {
-    let mut value_index = chunk.push_value(Value::Int(num));
+    let value_index = chunk.push_value(Value::Int(num));
     if value_index < (1 << 8) {
         chunk.push_code(OpCode::OpConstant, 0);
         chunk.push_code(value_index as u8, 0);
     } else if value_index < (1 << 24) {
-        let c_ind = value_index as u8; // shaves off most-significant bits
-        value_index >>= 8;
-        let b_ind = value_index as u8;
-        value_index >>= 8;
-        let a_ind = value_index as u8;
+        let (a_ind, b_ind, c_ind) = to_three_bytes(value_index);
 
         chunk.push_code(OpCode::OpConstantLong, 0);
         chunk.push_code(a_ind, 0);
@@ -221,4 +329,20 @@ fn compile_number(num: i64, chunk: &mut Chunk) {
             value_index
         );
     }
+}
+
+fn to_two_bytes(index: usize) -> (u8, u8) {
+    if index >= (1 << 16) {
+        panic!("Cannot make {} into two bytes", index);
+    }
+
+    ((index >> 8) as u8, index as u8)
+}
+
+fn to_three_bytes(index: usize) -> (u8, u8, u8) {
+    if index >= (1 << 24) {
+        panic!("Cannot make {} into three bytes", index);
+    }
+
+    ((index >> 16) as u8, (index >> 8) as u8, index as u8)
 }

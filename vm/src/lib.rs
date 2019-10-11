@@ -23,14 +23,18 @@ impl<'a> VM<'a> {
     }
 
     pub fn run(&mut self) {
+        use std::num::Wrapping;
+
         let chunk: &Chunk = &self.chunk;
         let code = chunk.get_code();
 
         loop {
             let op_code: OpCode = code[self.ip].try_into().expect("Byte should be an OpCode");
+            println!("Executing at byte {} which is code {:?}", self.ip, op_code);
 
             match op_code {
                 OpCode::OpReturn => {
+                    println!("RETURN");
                     break;
                 }
                 OpCode::OpPrint => {
@@ -39,6 +43,29 @@ impl<'a> VM<'a> {
                 }
                 OpCode::OpPop => {
                     let _ = self.stack.pop().unwrap();
+                }
+                OpCode::OpJump => {
+                    let jump_dist = chunk.get_two_bytes(self.ip + 1);
+                    self.ip += jump_dist;
+                }
+                OpCode::OpJumpBack => {
+                    let jump_dist = chunk.get_two_bytes(self.ip + 1);
+                    // subtract with overflow; note we want to wrap around, on purpose
+                    self.ip = (Wrapping(self.ip) - Wrapping(jump_dist)).0;
+                }
+                OpCode::OpJumpIfFalsePeek => {
+                    let peeked = as_bool(*self.stack.last().unwrap());
+                    if !peeked {
+                        let jump_dist = chunk.get_two_bytes(self.ip + 1);
+                        self.ip += jump_dist;
+                    }
+                }
+                OpCode::OpJumpIfFalsePop => {
+                    let peeked = as_bool(self.stack.pop().unwrap());
+                    if !peeked {
+                        let jump_dist = chunk.get_two_bytes(self.ip + 1);
+                        self.ip += jump_dist;
+                    }
                 }
                 OpCode::OpGetLocal => {
                     let offset = code[self.ip + 1] as usize;
@@ -60,11 +87,7 @@ impl<'a> VM<'a> {
                 OpCode::OpTrue => self.stack.push(Value::Bool(true)),
                 OpCode::OpFalse => self.stack.push(Value::Bool(false)),
                 OpCode::OpConstantLong => {
-                    let value_index = bytecode::make_three_byte_index(
-                        code[self.ip + 1],
-                        code[self.ip + 2],
-                        code[self.ip + 3],
-                    );
+                    let value_index = chunk.get_three_bytes(self.ip + 1);
                     let value = chunk.get_value(value_index).expect("Value should exist");
                     self.stack.push(value);
                 }
@@ -82,7 +105,7 @@ impl<'a> VM<'a> {
                 OpCode::OpNeq => self.binary_op(neq_op),
             }
 
-            self.ip += op_code.num_bytes();
+            self.ip = (Wrapping(self.ip) + Wrapping(op_code.num_bytes())).0;
         }
     }
 

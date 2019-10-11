@@ -60,11 +60,39 @@ fn make_statement(stmt: Pair<Rule>) -> StatementNode {
                 expr: expr_node,
             })
         }
+        Rule::IfStmt => {
+            let cond = make_expr_node(pairs.next().unwrap());
+            let if_block = make_block_node(pairs.next().unwrap());
+
+            StatementNode::IfStmt(IfStmtNode { cond, if_block })
+        }
+        Rule::IfElseStmt => {
+            let cond = make_expr_node(pairs.next().unwrap());
+            let if_block = make_block_node(pairs.next().unwrap());
+            let else_block = make_block_node(pairs.next().unwrap());
+
+            StatementNode::IfElseStmt(IfElseStmtNode {
+                cond,
+                if_block,
+                else_block,
+            })
+        }
+        Rule::WhileLoop => {
+            let cond = make_expr_node(pairs.next().unwrap());
+            let block = make_block_node(pairs.next().unwrap());
+
+            StatementNode::WhileLoop(WhileLoopNode { cond, block })
+        }
         other => panic!(
             "Unexpected rule {:?} when compiling statement; this is a code bug",
             other
         ),
     }
+}
+
+fn make_block_node(block: Pair<Rule>) -> BlockNode {
+    let statements = block.into_inner().map(make_statement).collect();
+    BlockNode { statements }
 }
 
 fn make_expr_node(expr: Pair<Rule>) -> ExprNode {

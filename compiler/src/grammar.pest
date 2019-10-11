@@ -69,7 +69,14 @@ NEQ = { "!=" }
 
 Number = @{ ("-")? ~ (ASCII_DIGIT)+ }
 
-ID = @{ ASCII_LETTER ~ (ASCII_LETTER | ASCII_DIGIT | "_")* }
+ID = @{ 
+    !(Reserved) ~
+    ( ASCII_LETTER ~ (ASCII_LETTER | ASCII_DIGIT | "_")* )
+}
+
+Reserved = {
+    "print" | "let" | "if" | "else" | "return"
+}
 
 ASCII_LETTER = _{ ('A'..'Z') | ('a'..'z') }
 

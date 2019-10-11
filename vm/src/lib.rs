@@ -9,6 +9,10 @@ pub struct VM<'a> {
     ip: usize,
 }
 
+pub trait Executor {
+    fn print(&mut self, val: Value);
+}
+
 impl<'a> VM<'a> {
     pub fn init(chunk: &'a Chunk) -> Self {
         VM {
@@ -22,7 +26,7 @@ impl<'a> VM<'a> {
         &self.stack
     }
 
-    pub fn run(&mut self) {
+    pub fn run<T: Executor>(&mut self, executor: &mut T) {
         use std::num::Wrapping;
 
         let chunk: &Chunk = &self.chunk;
@@ -39,7 +43,7 @@ impl<'a> VM<'a> {
                 }
                 OpCode::OpPrint => {
                     let stack_val = self.stack.pop().unwrap();
-                    println!("{:?}", stack_val);
+                    executor.print(stack_val);
                 }
                 OpCode::OpPop => {
                     let _ = self.stack.pop().unwrap();

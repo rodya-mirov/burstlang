@@ -1,9 +1,19 @@
 use std::io::BufRead;
 
+struct MainExecutor {}
+
+impl vm::Executor for MainExecutor {
+    fn print(&mut self, val: bytecode::Value) {
+        println!("{:?}", val);
+    }
+}
+
 fn main() {
     println!("Yeah this is gonna be silly, listen; each line needs to be a complete program. It's gonna be great. ctrl+D to quit.");
 
     // TODO: make a non-ridic binary?
+
+    let mut executor = MainExecutor {};
 
     let stdin = std::io::stdin();
 
@@ -15,18 +25,16 @@ fn main() {
                 let parsed = compiler::parse_program(&line);
                 match parsed {
                     Ok(ast) => {
-                        let mut chunk = compiler::compile_ast(ast);
+                        let chunk = compiler::compile_ast(ast);
 
                         println!(
                             "{}",
                             bytecode::disassemble::disassemble_chunk(&chunk, "My Program")
                         );
 
-                        chunk.push_code(bytecode::OpCode::OpReturn, 0);
-
                         let mut vm = vm::VM::init(&chunk);
 
-                        vm.run();
+                        vm.run(&mut executor);
 
                         println!("Resulting stack: {:?}", vm.get_stack());
                     }
@@ -42,3 +50,6 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

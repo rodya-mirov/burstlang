@@ -131,7 +131,7 @@ impl OpCode {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Value {
     Int(i64),
     Bool(bool),

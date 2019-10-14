@@ -58,7 +58,7 @@ fn test_var_defn() {
 
 #[test]
 fn test_neg_int() {
-    run_test_program("print -(12);", vec![Int(-12)]);
+    run_test_program("print -12;", vec![Int(-12)]);
 }
 
 #[test]
@@ -73,6 +73,16 @@ fn test_conditions() {
     );
     run_test_program("let x = 12; if(true) { print x; }", vec![Int(12)]);
     run_test_program("let x = 12; if(false) { print x; }", vec![]);
+}
+
+/// Covers the case where we have more than 256 constants (here, 300 of them)
+/// which causes us to hit a different OpCode.
+#[test]
+fn test_many_constants() {
+    let ints: Vec<String> = (1..300).map(|i| i.to_string()).collect();
+    let sum: String = ints.join(" + ");
+
+    run_test_program(&format!("print {};", sum), vec![Int(44850)]);
 }
 
 #[test]

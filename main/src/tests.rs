@@ -128,10 +128,20 @@ fn test_fn_call() {
 }
 
 #[test]
-fn test_fn_call_args() {
+fn test_fn_call_one_arg() {
     let code = "let x = fn(a) { print a; return 6; }; print x(43); x(3 * -7);";
 
     let expected_prints = vec![Value::Int(43), Value::Int(6), Value::Int(-21)];
+
+    run_test_program(code, expected_prints);
+}
+
+#[test]
+fn test_fn_call_two_args() {
+    let code =
+        "let my_fn = fn(a, b) { print a; return b+6; }; print my_fn(43, -1); my_fn(3 * -7, 14);";
+
+    let expected_prints = vec![Value::Int(43), Value::Int(5), Value::Int(-21)];
 
     run_test_program(code, expected_prints);
 }

@@ -57,7 +57,13 @@ impl VM {
 
             // stdout gives helpful debugger output, hopefully, for failing tests (it has helped before)
 
+            /*
+            println!("Stack: {:?}", self.stack);
+
+            println!("");
+
             println!("Executing at byte {} which is code {:?}", frame.ip, op_code);
+            */
 
             // Macros don't require function calls or closure objects, and don't hold onto lifetimes
             // But you can "construct" them inside the loop like this so we can "enclose" state <3
@@ -65,7 +71,12 @@ impl VM {
                 ($action:tt) => {{
                     use std::num::Wrapping;
 
-                    $action;
+                    // Annoying; but we need to wrap things in braces to make the macro compile, but
+                    // then clippy complains. So we quiet it here.
+                    #[allow(clippy::unnecessary_operation)]
+                    {
+                        $action;
+                    }
                     frame.ip = (Wrapping(frame.ip) + Wrapping(op_code.num_bytes())).0;
                 }};
             }
@@ -96,6 +107,7 @@ impl VM {
             match op_code {
                 OpCode::OpCall => {
                     let function_arity = code[frame.ip + 1] as usize;
+
                     let func_ptr: FnValue =
                         as_func(self.stack[self.stack.len() - function_arity - 1].clone());
                     let func_chunk = func_ptr.chunk.clone();
@@ -104,7 +116,8 @@ impl VM {
                     frame.ip += op_code.num_bytes();
 
                     self.frames.push(CallFrame {
-                        local_offset: self.frames.last().unwrap().local_offset + function_arity + 1,
+                        // Everything except the function arguments are NOT in this function's stack
+                        local_offset: self.stack.len() - function_arity,
                         function_arity,
                         chunk: func_chunk,
                         ip: 0,
@@ -120,8 +133,8 @@ impl VM {
 
                     let returning_frame = self.frames.pop().unwrap();
 
-                    for _ in 0..(returning_frame.function_arity + 1) {
-                        // pop the function arguments and the function itself
+                    // pop the function arguments and the function itself
+                    for _ in 0..=returning_frame.function_arity {
                         self.stack.pop();
                     }
 

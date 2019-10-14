@@ -240,7 +240,7 @@ impl Chunk {
 pub mod disassemble {
     use std::convert::TryInto;
 
-    use super::{Chunk, OpCode};
+    use super::{Chunk, OpCode, Value};
 
     pub fn disassemble_chunk(chunk: &Chunk, name: &str) -> String {
         let mut out = String::new();
@@ -253,6 +253,14 @@ pub mod disassemble {
             // TODO: do the "same as last instruction line | thing"
             let new_str = disassemble_instruction(&mut index, chunk);
             out.push_str(&new_str);
+        }
+
+        for v in chunk.values.iter() {
+            if let Value::Function(f) = v {
+                out.push_str("\n");
+                let sub_chunk_name = format!("{} . {}", name, f.name);
+                out.push_str(&disassemble_chunk(&f.chunk, &sub_chunk_name));
+            };
         }
 
         out

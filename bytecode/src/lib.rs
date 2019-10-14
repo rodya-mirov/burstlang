@@ -136,7 +136,7 @@ impl OpCode {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Value {
     Int(i64),
     Bool(bool),
@@ -146,17 +146,10 @@ pub enum Value {
 /// Function object, stored as a first-class value in Lox
 /// Note: I really really don't like this representation (very heavyweight, breaks Copy, etc.)
 /// but let's follow the book and get it working, then test, then think about how to fix it
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct FnValue {
-    pub name: String,
+    pub start_ip: usize,
     pub arity: usize,
-    pub chunk: Chunk,
-}
-
-impl std::fmt::Debug for FnValue {
-    fn fmt<'a>(&self, f: &mut std::fmt::Formatter<'a>) -> std::fmt::Result {
-        write!(f, "Function {}: {} args", self.name, self.arity)
-    }
 }
 
 impl Value {
@@ -220,8 +213,12 @@ impl Chunk {
 
     #[inline(always)]
     pub fn get_value(&self, index: usize) -> Option<Value> {
-        // TODO: turn this back into copied
-        self.values.get(index).cloned()
+        self.values.get(index).copied()
+    }
+
+    #[inline(always)]
+    pub fn get_value_mut(&mut self, index: usize) -> Option<&mut Value> {
+        self.values.get_mut(index)
     }
 
     #[inline(always)]
@@ -240,7 +237,7 @@ impl Chunk {
 pub mod disassemble {
     use std::convert::TryInto;
 
-    use super::{Chunk, OpCode, Value};
+    use super::{Chunk, OpCode};
 
     pub fn disassemble_chunk(chunk: &Chunk, name: &str) -> String {
         let mut out = String::new();
@@ -255,6 +252,8 @@ pub mod disassemble {
             out.push_str(&new_str);
         }
 
+        // TODO: improve disassemble stuff to label function start and stop
+        /*
         for v in chunk.values.iter() {
             if let Value::Function(f) = v {
                 out.push_str("\n");
@@ -262,6 +261,7 @@ pub mod disassemble {
                 out.push_str(&disassemble_chunk(&f.chunk, &sub_chunk_name));
             };
         }
+        */
 
         out
     }

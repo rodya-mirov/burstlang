@@ -5,6 +5,7 @@ use bytecode::{Chunk, FnValue, OpCode, Value};
 pub struct VM {
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
+    chunk: Chunk,
 }
 
 pub struct CallFrame {
@@ -12,8 +13,6 @@ pub struct CallFrame {
     local_offset: usize,
     // How many locals to pop off the stack when we return
     function_arity: usize,
-    // Which chunk we are executing
-    chunk: Chunk,
     // instruction pointer; name is classical
     ip: usize,
 }
@@ -25,13 +24,13 @@ pub trait Executor {
 impl VM {
     pub fn init(chunk: Chunk) -> Self {
         VM {
+            chunk,
             // TODO: make these into smallvecs that explode instead of resizing
             stack: Vec::new(),
             // TODO: make these into smallvecs that explode instead of resizing
             frames: vec![CallFrame {
                 local_offset: 0,
                 function_arity: 0,
-                chunk,
                 ip: 0,
             }],
         }
@@ -42,15 +41,13 @@ impl VM {
     }
 
     pub fn run<T: Executor>(&mut self, executor: &mut T) {
-        let tree = bytecode::disassemble::disassemble_chunk(
-            &self.frames.last().unwrap().chunk,
-            "main_chunk",
-        );
+        let chunk = &self.chunk;
+
+        let tree = bytecode::disassemble::disassemble_chunk(chunk, "main_chunk");
         println!("{}", tree);
 
         loop {
             let frame: &mut CallFrame = self.frames.last_mut().unwrap();
-            let chunk = &frame.chunk;
             let code = chunk.get_code();
 
             let op_code: OpCode = code[frame.ip].try_into().expect("Byte should be an OpCode");
@@ -108,9 +105,8 @@ impl VM {
                 OpCode::OpCall => {
                     let function_arity = code[frame.ip + 1] as usize;
 
-                    let func_ptr: FnValue =
-                        as_func(self.stack[self.stack.len() - function_arity - 1].clone());
-                    let func_chunk = func_ptr.chunk.clone();
+                    let func_local_index = self.stack.len() - function_arity - 1;
+                    let func_ptr: FnValue = as_func(self.stack[func_local_index]);
 
                     // Note: we modify frame.ip now, so that when we return, we'll be at the right place
                     frame.ip += op_code.num_bytes();
@@ -119,8 +115,7 @@ impl VM {
                         // Everything except the function arguments are NOT in this function's stack
                         local_offset: self.stack.len() - function_arity,
                         function_arity,
-                        chunk: func_chunk,
-                        ip: 0,
+                        ip: func_ptr.start_ip,
                     });
                 }
                 OpCode::OpReturn => {

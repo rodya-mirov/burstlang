@@ -14,9 +14,7 @@ pub fn make_ast(program: Pair<Rule>) -> AST {
 }
 
 pub fn compile_ast(ast: AST) -> Chunk {
-    let mut out_chunk = compile::compile_ast(ast);
-    out_chunk.push_code(bytecode::OpCode::OpReturn, 0);
-    out_chunk
+    compile::compile_ast(ast)
 }
 
 fn compile_error(expr: &Pair<Rule>) -> ! {

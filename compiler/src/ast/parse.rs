@@ -60,6 +60,24 @@ fn make_statement(stmt: Pair<Rule>) -> StatementNode {
                 expr: expr_node,
             })
         }
+        Rule::FuncDefnStmt => {
+            let func_name = pairs.next().unwrap().as_str().to_string();
+
+            let arg_list = pairs.next().unwrap();
+            let args = arg_list
+                .into_inner()
+                .map(|pair| pair.as_str().to_string())
+                .collect();
+
+            let block = pairs.next().unwrap();
+            let body = block.into_inner().map(make_statement).collect();
+
+            StatementNode::FuncDefnStmt(FuncDefnStmtNode {
+                name: func_name,
+                args,
+                body,
+            })
+        }
         Rule::IfStmt => {
             let cond = make_expr_node(pairs.next().unwrap());
             let if_block = make_block_node(pairs.next().unwrap());
@@ -189,8 +207,20 @@ fn make_primary(primary: Pair<Rule>) -> ExprNode {
         Rule::TRUE => ExprNode::Constant(ConstantExprNode::Boolean(true)),
         Rule::VariableAccess => make_variable_access(child_pair),
         Rule::UnaryExpr => make_unary_expr(child_pair),
+        Rule::FnCallExpr => make_fn_call_expr(child_pair),
         _ => compile_error(&child_pair),
     }
+}
+
+fn make_fn_call_expr(fn_call: Pair<Rule>) -> ExprNode {
+    let mut pairs = fn_call.into_inner();
+
+    let fn_name = pairs.next().unwrap().as_str().to_string();
+    let arg_list = pairs.next().unwrap();
+
+    let args = arg_list.into_inner().map(make_expr_node).collect();
+
+    ExprNode::FnCall(FnCallNode { fn_name, args })
 }
 
 fn make_variable_access(access: Pair<Rule>) -> ExprNode {

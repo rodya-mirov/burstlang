@@ -25,9 +25,20 @@ fn run_test_program(program_code: &str, expected_prints: Vec<Value>) {
     let ast = compiler::parse_program(program_code).unwrap();
     let chunk = compiler::compile_ast(ast);
 
-    vm::VM::init(&chunk).run(&mut exec);
+    vm::VM::init(chunk).run(&mut exec);
 
-    assert_eq!(exec.prints, expected_prints);
+    let actual_prints: Vec<String> = exec
+        .prints
+        .into_iter()
+        .map(|v| format!("{:?}", v))
+        .collect();
+
+    let expected_prints: Vec<String> = expected_prints
+        .into_iter()
+        .map(|v| format!("{:?}", v))
+        .collect();
+
+    assert_eq!(actual_prints, expected_prints);
 }
 
 #[test]
@@ -97,4 +108,30 @@ fn test_conditions_with_var() {
     );
     run_test_program("let x = 12; if(!(x <= 1)) { print x; }", vec![Int(12)]);
     run_test_program("let x = 12; if(!(x > 1)) { print x; }", vec![]);
+}
+
+#[test]
+fn test_fn_defn() {
+    // Function is declared but never called
+    let code = "let x = fn() {print 12; return 5; }; print 101;";
+    let expected_prints = vec![Value::Int(101)];
+
+    run_test_program(code, expected_prints);
+}
+
+#[test]
+fn test_fn_call() {
+    let code = "let x = fn() {print 12; return 5; }; print x();";
+    let expected_prints = vec![Value::Int(12), Value::Int(5)];
+
+    run_test_program(code, expected_prints);
+}
+
+#[test]
+fn test_fn_call_args() {
+    let code = "let x = fn(a) { print a; return 6; }; print x(43); x(3 * -7);";
+
+    let expected_prints = vec![Value::Int(43), Value::Int(6), Value::Int(-21)];
+
+    run_test_program(code, expected_prints);
 }

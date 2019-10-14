@@ -32,7 +32,7 @@ fn main() {
                             bytecode::disassemble::disassemble_chunk(&chunk, "My Program")
                         );
 
-                        let mut vm = vm::VM::init(&chunk);
+                        let mut vm = vm::VM::init(chunk);
 
                         vm.run(&mut executor);
 

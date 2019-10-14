@@ -4,6 +4,9 @@ use bytecode::Chunk;
 
 use super::Rule;
 
+#[cfg(test)]
+mod tests;
+
 pub fn make_ast(program: Pair<Rule>) -> AST {
     AST {
         root: parse::make_program(program),
@@ -42,10 +45,18 @@ pub enum StatementNode {
     PrintStmt(PrintStmtNode),
     ReturnStmt(ReturnStmtNode),
     VarDefnStmt(VarDefnStmtNode),
+    FuncDefnStmt(FuncDefnStmtNode),
     IfStmt(IfStmtNode),
     IfElseStmt(IfElseStmtNode),
     WhileLoop(WhileLoopNode),
     Block(BlockNode),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FuncDefnStmtNode {
+    name: String,
+    args: Vec<String>,
+    body: Vec<StatementNode>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -99,6 +110,13 @@ pub enum ExprNode {
     Binary(Box<BinaryExprNode>),
     Constant(ConstantExprNode),
     VariableAccess(VariableAccessExprNode),
+    FnCall(FnCallNode),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FnCallNode {
+    fn_name: String,
+    args: Vec<ExprNode>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -5,6 +5,7 @@ Stmt = {
     PrintStmt |
     ReturnStmt |
     VarDefnStmt |
+    FuncDefnStmt |
     IfElseStmt |
     IfStmt |
     WhileLoop |
@@ -14,12 +15,18 @@ Stmt = {
 ExprStmt = { Expr ~ SEMI }
 PrintStmt = { "print" ~ Expr ~ SEMI }
 VarDefnStmt = { "let" ~ ID ~ "=" ~ Expr ~ SEMI }
+FuncDefnStmt = { "let" ~ ID ~ "=" ~ "fn" ~ ArgList ~ Block ~ SEMI }
 ReturnStmt = { "return" ~ Expr ~ SEMI }
 IfStmt = { "if" ~ "(" ~ Expr ~ ")" ~ Block }
 IfElseStmt = { "if" ~ "(" ~ Expr ~ ")" ~ Block ~ "else" ~ Block }
 Block = { "{" ~ (Stmt)* ~ "}" }
 WhileLoop = {
     "while" ~ "(" ~ Expr ~ ")" ~ Block
+}
+
+ArgList = {
+    ( "(" ~ ")" ) |
+    ( "(" ~ ID ~ ("," ~ ID)* ~ ")" )
 }
 
 
@@ -35,8 +42,25 @@ Primary = {
     Number |
     TRUE |
     FALSE |
+    // NB: this can't be below variable access, because they
+    // look indistinguishable, so PEG reads a variable and stops,
+    // resulting in _no parse_ (not an ambiguity thing).
+    // :think: this seems bad, and makes me nervous about the whole
+    // process
+    FnCallExpr |
     VariableAccess |
     UnaryExpr
+}
+
+FnCallExpr = {
+    // TODO: can't call a function without giving it a name;
+    // no true function exprs / lambda
+    ID ~ CallExprList
+}
+
+CallExprList = {
+    ("(" ~ ")" ) |
+    ("(" ~ Expr ~ ( "," ~ Expr )* ~ ")" )
 }
 
 TRUE = { "true" }

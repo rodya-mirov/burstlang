@@ -1,4 +1,4 @@
-use bytecode::{Chunk, OpCode, Value};
+use bytecode::{Chunk, FnValue, OpCode, Value};
 
 use super::*;
 
@@ -103,23 +103,66 @@ fn compile_stmt(stmt: StatementNode, chunk: &mut Chunk, compiler: &mut Compiler)
             compile_if_else_stmt(if_else_stmt_node, chunk, compiler);
         }
         VarDefnStmt(var_defn_node) => {
-            let var_name = var_defn_node.var_name;
-
-            // TODO: descriptive error ("the name is in use!")
-            // Note: this (intentionally) prevents shadowing.
-            let var_index = compiler.add_local(&var_name).unwrap();
-
-            if var_index >= (1 << 8) {
-                panic!("Cannot handle 256 variables!");
-            }
-
             compile_expr(var_defn_node.expr, chunk, compiler);
 
-            chunk.push_code(OpCode::OpSetLocal, 0);
-            chunk.push_code(var_index as u8, 0);
+            define_local(&var_defn_node.var_name, chunk, compiler);
+        }
+        FuncDefnStmt(func_stmt_defn_node) => {
+            // TODO: code smell; probably doesn't matter but we clone this name a lot here
+            let fn_name = func_stmt_defn_node.name.clone();
+
+            let arity = func_stmt_defn_node.args.len();
+
+            let func_chunk = make_fn_chunk(func_stmt_defn_node);
+
+            let func_value = Value::Function(FnValue {
+                name: fn_name.clone(),
+                arity,
+                chunk: func_chunk,
+            });
+
+            compile_constant(func_value, chunk);
+
+            define_local(&fn_name, chunk, compiler);
         }
         WhileLoop(while_loop_node) => compile_while_loop(while_loop_node, chunk, compiler),
     }
+}
+
+fn define_local(name: &str, chunk: &mut Chunk, compiler: &mut Compiler) {
+    // TODO: descriptive error ("the name is in use!")
+    // Note: this (intentionally) prevents shadowing.
+    let var_index = compiler.add_local(name).unwrap();
+
+    if var_index >= (1 << 8) {
+        panic!("Cannot handle 256 variables!");
+    }
+
+    chunk.push_code(OpCode::OpSetLocal, 0);
+    chunk.push_code(var_index as u8, 0);
+}
+
+fn make_fn_chunk(func_defn_node: FuncDefnStmtNode) -> Chunk {
+    // NB: this instantiates a NEW compiler; this means a function literally
+    // cannot see anything outside the function. Which is gonna be a problem.
+    // We're gonna work on it in next chapter (closures)
+
+    let mut compiler = Compiler::init();
+    let mut chunk = Chunk::init();
+
+    if func_defn_node.args.len() >= 256 {
+        panic!("Cannot handle a function with 256 arguments");
+    }
+
+    for arg_name in &func_defn_node.args {
+        compiler.add_local(arg_name).expect("Don't reuse arg names");
+    }
+
+    for stmt in func_defn_node.body {
+        compile_stmt(stmt, &mut chunk, &mut compiler);
+    }
+
+    chunk
 }
 
 fn compile_while_loop(while_loop_node: WhileLoopNode, chunk: &mut Chunk, compiler: &mut Compiler) {
@@ -241,6 +284,20 @@ fn compile_expr(expr: ExprNode, chunk: &mut Chunk, compiler: &mut Compiler) {
     use ExprNode::*;
 
     match expr {
+        FnCall(fn_call_expr) => {
+            let arity = fn_call_expr.args.len();
+            if arity >= 256 {
+                panic!("Cannot handle 256 args to a function");
+            }
+
+            compile_var_access_by_name(&fn_call_expr.fn_name, chunk, compiler);
+            for arg in fn_call_expr.args {
+                compile_expr(arg, chunk, compiler);
+            }
+
+            chunk.push_code(OpCode::OpCall, 0);
+            chunk.push_code(arity as u8, 0);
+        }
         Unary(unary_expr) => {
             let unary_expr: UnaryExprNode = *unary_expr;
             compile_expr(unary_expr.expr, chunk, compiler);
@@ -286,13 +343,8 @@ fn compile_binary_op(op: BinaryOperation, chunk: &mut Chunk) {
     }
 }
 
-fn compile_variable_access(
-    var: VariableAccessExprNode,
-    chunk: &mut Chunk,
-    compiler: &mut Compiler,
-) {
-    let var_name = var.var_name;
-    let var_index = compiler.get_local_index(&var_name);
+fn compile_var_access_by_name(var_name: &str, chunk: &mut Chunk, compiler: &mut Compiler) {
+    let var_index = compiler.get_local_index(var_name);
 
     if var_index.is_none() {
         panic!(
@@ -311,8 +363,17 @@ fn compile_variable_access(
     chunk.push_code(var_index as u8, 0);
 }
 
-fn compile_number(num: i64, chunk: &mut Chunk) {
-    let value_index = chunk.push_value(Value::Int(num));
+fn compile_variable_access(
+    var: VariableAccessExprNode,
+    chunk: &mut Chunk,
+    compiler: &mut Compiler,
+) {
+    let var_name = var.var_name;
+    compile_var_access_by_name(&var_name, chunk, compiler);
+}
+
+fn compile_constant(v: Value, chunk: &mut Chunk) {
+    let value_index = chunk.push_value(v);
     if value_index < (1 << 8) {
         chunk.push_code(OpCode::OpConstant, 0);
         chunk.push_code(value_index as u8, 0);
@@ -329,6 +390,10 @@ fn compile_number(num: i64, chunk: &mut Chunk) {
             value_index
         );
     }
+}
+
+fn compile_number(num: i64, chunk: &mut Chunk) {
+    compile_constant(Value::Int(num), chunk);
 }
 
 fn to_two_bytes(index: usize) -> (u8, u8) {

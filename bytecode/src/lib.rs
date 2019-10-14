@@ -44,6 +44,9 @@ pub enum OpCode {
     OpJumpIfFalsePeek = 23, // 2 operands; 2-byte jump amount (peek at stack and maybe jump but don't pop)
     OpJumpIfFalsePop = 24,  // 2 operands; 2-byte jump amount (pop from stack and maybe jump)
     OpJumpBack = 25,        // 2 operands; 2-byte "jump BACKWARDS this amount"
+
+    // Function calls
+    OpCall = 26, // 1 operand, which is number of args
 }
 
 impl std::convert::TryFrom<u8> for OpCode {
@@ -75,6 +78,7 @@ impl std::convert::TryFrom<u8> for OpCode {
             23 => Ok(OpCode::OpJumpIfFalsePeek),
             24 => Ok(OpCode::OpJumpIfFalsePop),
             25 => Ok(OpCode::OpJumpBack),
+            26 => Ok(OpCode::OpCall),
             _ => Err(val),
         }
     }
@@ -90,6 +94,7 @@ impl OpCode {
     // Gets the number of bytes for this OpCode, including self and any operands
     pub fn num_bytes(self) -> usize {
         match self {
+            OpCode::OpCall => 2,
             OpCode::OpReturn => 1,
 
             // constant lookups
@@ -131,10 +136,27 @@ impl OpCode {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Value {
     Int(i64),
     Bool(bool),
+    Function(FnValue),
+}
+
+/// Function object, stored as a first-class value in Lox
+/// Note: I really really don't like this representation (very heavyweight, breaks Copy, etc.)
+/// but let's follow the book and get it working, then test, then think about how to fix it
+#[derive(Clone)]
+pub struct FnValue {
+    pub name: String,
+    pub arity: usize,
+    pub chunk: Chunk,
+}
+
+impl std::fmt::Debug for FnValue {
+    fn fmt<'a>(&self, f: &mut std::fmt::Formatter<'a>) -> std::fmt::Result {
+        write!(f, "Function {}: {} args", self.name, self.arity)
+    }
 }
 
 impl Value {
@@ -142,10 +164,12 @@ impl Value {
         match self {
             Value::Int(_) => "int",
             Value::Bool(_) => "bool",
+            Value::Function(_) => "fn",
         }
     }
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     // Stored contiguously; some of these are OpCodes, and some are operands
     code: Vec<u8>,
@@ -196,7 +220,8 @@ impl Chunk {
 
     #[inline(always)]
     pub fn get_value(&self, index: usize) -> Option<Value> {
-        self.values.get(index).copied()
+        // TODO: turn this back into copied
+        self.values.get(index).cloned()
     }
 
     #[inline(always)]
@@ -241,6 +266,14 @@ pub mod disassemble {
 
         let op_code = code.try_into();
         let string_out = match op_code {
+            Ok(OpCode::OpCall) => {
+                (format!(
+                    "{:04} {:04} OP_CALL ({} args)\n",
+                    line,
+                    offset,
+                    chunk.code[offset + 1]
+                ))
+            }
             Ok(OpCode::OpReturn) => (format!("{:04} {:04} OP_RETURN\n", line, offset)),
             Ok(OpCode::OpNegate) => (format!("{:04} {:04} OP_NEGATE\n", line, offset)),
             Ok(OpCode::OpGeq) => (format!("{:04} {:04} OP_GEQ\n", line, offset)),

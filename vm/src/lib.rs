@@ -138,7 +138,7 @@ impl VM {
                     executor.print(stack_val);
                 }),
                 OpCode::OpPop => and_inc!({
-                    let _ = self.stack.pop().unwrap();
+                    self.stack.pop().unwrap();
                 }),
                 OpCode::OpJump => and_inc!({
                     let jump_dist = chunk.get_two_bytes(frame.ip + 1);

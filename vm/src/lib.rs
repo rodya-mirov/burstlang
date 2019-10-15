@@ -43,9 +43,6 @@ impl VM {
     pub fn run<T: Executor>(&mut self, executor: &mut T) {
         let chunk = &self.chunk;
 
-        let tree = bytecode::disassemble::disassemble_chunk(chunk, "main_chunk");
-        println!("{}", tree);
-
         loop {
             let frame: &mut CallFrame = self.frames.last_mut().unwrap();
             let code = chunk.get_code();

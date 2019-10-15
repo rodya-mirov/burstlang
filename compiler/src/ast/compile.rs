@@ -167,8 +167,6 @@ fn define_local(name: &str, chunk: &mut Chunk, compiler: &mut Compiler) {
 
 /// Compiles a function definition at the end
 fn compile_function_delayed(func: FunctionToProcess, chunk: &mut Chunk, compiler: &mut Compiler) {
-    println!("Workin!");
-
     if func.args.len() >= 256 {
         panic!("Cannot handle a function with 256 arguments");
     }

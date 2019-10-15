@@ -1,5 +1,5 @@
 [package]
-name = "main"
+name = "burstc"
 version = "0.1.0"
 authors = ["Richard Rast <richard.rast@gmail.com>"]
 edition = "2018"

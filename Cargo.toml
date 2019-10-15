@@ -4,5 +4,8 @@ members = [
     "bytecode",
     "compiler",
     "vm",
+    # The REPL
     "main",
+    # The compiler utility
+    "burstc"
 ]

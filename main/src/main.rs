@@ -35,8 +35,6 @@ fn main() {
                         let mut vm = vm::VM::init(chunk);
 
                         vm.run(&mut executor);
-
-                        println!("Resulting stack: {:?}", vm.get_stack());
                     }
                     Err(e) => {
                         println!("Not a valid parse sorry: {:?}", e);

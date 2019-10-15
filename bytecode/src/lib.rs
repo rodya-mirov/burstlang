@@ -92,6 +92,7 @@ impl From<OpCode> for u8 {
 
 impl OpCode {
     // Gets the number of bytes for this OpCode, including self and any operands
+    #[inline(always)]
     pub fn num_bytes(self) -> usize {
         match self {
             OpCode::OpCall => 2,
@@ -162,7 +163,6 @@ impl Value {
     }
 }
 
-#[derive(Clone)]
 pub struct Chunk {
     // Stored contiguously; some of these are OpCodes, and some are operands
     code: Vec<u8>,

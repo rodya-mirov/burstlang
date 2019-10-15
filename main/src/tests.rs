@@ -145,3 +145,22 @@ fn test_fn_call_two_args() {
 
     run_test_program(code, expected_prints);
 }
+
+#[test]
+fn test_fib() {
+    let code = "
+    let fib = fn(n, step) {
+        if (n <= 1) {
+            return n;
+        } else {
+            return step(n-1, step) + step(n-2, step);
+        }
+    };
+
+    print fib(12, fib);
+    ";
+
+    let expected_prints = vec![Value::Int(144)];
+
+    run_test_program(code, expected_prints);
+}
